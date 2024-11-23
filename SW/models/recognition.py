@@ -1,0 +1,76 @@
+import torch
+import lightning as L
+
+
+from torchmetrics.functional.classification import accuracy
+from torchmetrics import Accuracy
+from torchmetrics.classification import ConfusionMatrix
+
+from typing import Dict, Tuple
+from torch.nn.functional import softmax
+
+from models.networks.model import GCN
+
+import wandb
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+class LNRecognition(L.LightningModule):
+    def __init__(self, 
+                 config):
+        super().__init__()
+
+        self.lr = config.train.lr
+        self.weight_decay = config.train.weight_decay
+
+        self.batch_size = config.train.batch_size
+        self.num_classes = config.model.num_classes
+
+        self.model = GCN(config)
+        self.criterion = torch.nn.CrossEntropyLoss()
+        self.save_hyperparameters()
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), 
+                                     lr=self.lr, 
+                                     weight_decay=self.weight_decay)
+
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        return {'optimizer': optimizer, 
+                'lr_scheduler': lr_scheduler}
+
+    def forward(self, data):
+        return self.model(data)
+
+    def training_step(self, batch, batch_idx):
+        outputs = self.forward(data=batch)
+        loss = self.criterion(outputs, target=batch['y'])
+
+        y_prediction = torch.argmax(outputs, dim=-1)
+        acc = accuracy(preds=y_prediction, target=batch['y'], task="multiclass", num_classes=self.num_classes)
+
+        self.log('train_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
+        self.log('train_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        outputs = self.forward(data=batch)
+        
+        loss = self.criterion(outputs, target=batch['y'])
+        y_prediction = torch.argmax(outputs, dim=-1)
+
+        acc = accuracy(preds=y_prediction, target=batch['y'], task="multiclass", num_classes=self.num_classes)
+        self.log('val_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
+        self.log('val_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size)
+
+    def test_step(self, batch, batch_idx):
+        outputs = self.forward(data=batch)
+        loss = self.criterion(outputs, target=torch.tensor(batch['y']).long().to('cuda'))
+
+        y_prediction = torch.argmax(outputs, dim=-1)
+        accuracy = self.accuracy(preds=y_prediction.cpu().unsqueeze(0), target=torch.tensor([batch['y']]))
+
+        self.log('test_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
+        self.log('test_acc', accuracy, on_epoch=True, logger=True, batch_size=self.batch_size)

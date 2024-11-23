@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, PointNetConv, GATConv, GATv2Conv, GINConv, GAT, GIN, global_mean_pool, \
     global_add_pool, global_max_pool, SplineConv, BatchNorm, PairNorm
-from torch.nn import Module, ModuleList, Linear, Dropout
+from torch.nn import Module, ModuleList, Linear, Dropout, Sequential
 
 
 class GCN(Module):
@@ -16,10 +16,10 @@ class GCN(Module):
         linear_ch = config.model.linear_channels
         num_classes = config.model.num_classes
         
-        self.conv1 = PointNetConv(ModuleList(Linear(1+2, conv_ch, bias=False), BatchNorm(conv_ch)))
-        self.conv2 = PointNetConv(ModuleList(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
-        self.conv3 = PointNetConv(ModuleList(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
-        self.conv4 = PointNetConv(ModuleList(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
+        self.conv1 = PointNetConv(Sequential(Linear(1+2, conv_ch, bias=False), BatchNorm(conv_ch)))
+        self.conv2 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
+        self.conv3 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
+        self.conv4 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
 
         self.fc1 = Linear(conv_ch, linear_ch)
         self.fc2 = Linear(linear_ch, num_classes)
