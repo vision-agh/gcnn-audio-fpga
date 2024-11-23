@@ -45,7 +45,7 @@ class SpikingDigits(L.LightningDataModule):
             
             torch.save(data, new_file_name)
 
-    def setup(self):
+    def setup(self, stage=None):
         train_data = glob.glob(os.path.join(self.data_dir, 'processed/train/*'))
         test_data = glob.glob(os.path.join(self.data_dir, 'processed/test/*'))
 

@@ -16,7 +16,7 @@ from torch_geometric.typing import (
 )
 from typing import Optional, Union
 
-from models.layers.quantisation.observer import Observer, FakeQuantize, quantize_tensor, dequantize_tensor
+from models.networks.layers.quantisation.observer import Observer, FakeQuantize, quantize_tensor, dequantize_tensor
 
 class MyPointNetConv(MessagePassing):
     def __init__(

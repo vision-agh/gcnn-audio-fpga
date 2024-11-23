@@ -3,11 +3,15 @@ general:
   data_dir: datasets/hdspikes
 
   time_window: 1 # 1 second
-  num_freq: 700 # number of frequency neurons
+  num_channels: 700 # number of frequency channels
 
 preprocess:
   create_val: True
   val_split: 0.1
+
+graph:
+  time_radius: 0.02
+  channel_radius: 10
 
 train:
   batch_size: 16
