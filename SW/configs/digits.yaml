@@ -1,0 +1,17 @@
+general:
+  name: Spiking_Heidelberg_Digits
+  data_dir: datasets/hdspikes
+  time_window: 1000000 # 1 second
+  num_classes: 20 # 10 digits in english and 10 digits in german
+
+preprocess:
+  num_workers: 8
+  create_val: True
+  val_split: 0.1
+
+train:
+  batch_size: 16
+  num_workers: 8
+  num_epochs: 100
+  lr: 0.001
+  weight_decay: 0.0001
