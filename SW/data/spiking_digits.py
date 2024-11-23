@@ -43,7 +43,7 @@ class SpikingDigits(L.LightningDataModule):
             
             torch.save(data, new_file_name)
 
-    def setup(self, stage=None):
+    def setup(self):
         train_data = glob.glob(os.path.join(self.data_dir, 'processed/train/*'))
         test_data = glob.glob(os.path.join(self.data_dir, 'processed/test/*'))
 
@@ -53,14 +53,15 @@ class SpikingDigits(L.LightningDataModule):
             val_data = train_data[:n_val]
             train_data = train_data[n_val:]
 
+        try:
             self.val_data = SpikingDS(val_data)
-        else:
-
+            print(f'Using {len(val_data)} samples as validation data')
+        except:
             self.val_data = SpikingDS(test_data)
+            print('Using test data as validation data')
 
         self.train_data = SpikingDS(train_data)
         self.test_data = SpikingDS(test_data)
-
 
     def train_dataloader(self):
         return DataLoader(self.train_data, 
