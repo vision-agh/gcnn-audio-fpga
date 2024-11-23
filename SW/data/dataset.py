@@ -30,7 +30,14 @@ class SpikingDS(Dataset):
         data.pos = data.pos[mask] # Cut data to time window
 
         # TODO: Generate edge_index here
-        data.edge_index = self.generate_edges(data.pos[:, 0], data.pos[:, 1])
+        data.edge_index = self.generate_edges(data.pos[:, 0], 
+                                              data.pos[:, 1],
+                                              self.time_radius,
+                                              self.channel_radius)
+
+        # TODO: Normalise node positions here
+        data.pos[:, 0] = data.pos[:, 0] / self.time_window
+        data.pos[:, 1] = data.pos[:, 1] / self.num_channels
 
         # TODO: Generate node features here
         data.x = torch.ones(data.pos.shape[0], 1)
