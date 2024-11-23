@@ -8,3 +8,10 @@ cfg = dotmap.DotMap(cfg)
 dm = SpikingDigits(cfg)
 
 dm.setup()
+
+
+train_loader = dm.train_dataloader()
+
+for batch in train_loader:
+    print(batch)
+    # break

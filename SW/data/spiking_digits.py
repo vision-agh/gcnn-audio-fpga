@@ -4,6 +4,7 @@ import h5py
 import numpy as np
 import torch
 import lightning as L
+import torch_geometric
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
@@ -36,6 +37,7 @@ class SpikingDigits(L.LightningDataModule):
             if os.path.exists(new_file_name):
                 continue
             os.makedirs(os.path.dirname(new_file_name), exist_ok=True)
+
             pos = np.column_stack((times, units))
 
             data = Data(pos=torch.tensor(pos, dtype=torch.float),
@@ -54,32 +56,40 @@ class SpikingDigits(L.LightningDataModule):
             train_data = train_data[n_val:]
 
         try:
-            self.val_data = SpikingDS(val_data)
+            self.val_data = SpikingDS(val_data, self.config)
             print(f'Using {len(val_data)} samples as validation data')
         except:
-            self.val_data = SpikingDS(test_data)
+            self.val_data = SpikingDS(test_data, self.config)
             print('Using test data as validation data')
 
-        self.train_data = SpikingDS(train_data)
-        self.test_data = SpikingDS(test_data)
+        self.train_data = SpikingDS(train_data, self.config)
+        self.test_data = SpikingDS(test_data, self.config)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, 
                             batch_size=self.config.train.batch_size,
                             shuffle=True,
                             num_workers=self.config.train.num_workers,
-                            persistent_workers=True)
+                            persistent_workers=True,
+                            collate_fn=self.collate_fn)
 
     def val_dataloader(self):
         return DataLoader(self.val_data,
                             batch_size=self.config.train.batch_size,
                             shuffle=False,
                             num_workers=self.config.train.num_workers,
-                            persistent_workers=True)
+                            persistent_workers=True,
+                            collate_fn=self.collate_fn)
     
     def test_dataloader(self):
         return DataLoader(self.test_data,
                             batch_size=self.config.train.batch_size,
                             shuffle=False,
                             num_workers=self.config.train.num_workers,
-                            persistent_workers=True)
+                            persistent_workers=True,
+                            collate_fn=self.collate_fn)
+    
+    @staticmethod
+    def collate_fn(data_list):
+        batch = torch_geometric.data.Batch.from_data_list(data_list)
+        return batch
