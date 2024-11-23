@@ -5,7 +5,6 @@ general:
   num_classes: 20 # 10 digits in english and 10 digits in german
 
 preprocess:
-  num_workers: 8
   create_val: True
   val_split: 0.1
 
