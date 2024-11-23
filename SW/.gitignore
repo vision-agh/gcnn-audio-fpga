@@ -1,5 +1,5 @@
 # User defined files
-/hdspikes/*
+/datasets/hdspikes/*
 
 
 # Byte-compiled / optimized / DLL files
