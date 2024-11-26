@@ -2,11 +2,12 @@
 
 //  Based on Language Templates - URAM/BRAM Memory
 //  Xilinx UltraRAM True Dual Port Mode.
+import graph_pkg::*;
 
 module memory #(
-    parameter AWIDTH   = 16,     // Address Width
-    parameter DWIDTH   = 72,     // Data Width
-    parameter RAM_TYPE = "ultra" // Memory type ("ultra" or "block")
+    parameter AWIDTH   = F_WIDTH,     // Address Width
+    parameter DWIDTH   = T_WIDTH,     // Data Width
+    parameter RAM_TYPE = "block" // Memory type ("ultra" or "block")
 ) ( 
     input                     clk,     // Clock
 

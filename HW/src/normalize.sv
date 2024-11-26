@@ -1,54 +1,59 @@
 `timescale 1ns / 1ps
 
-module normalize #(
-    parameter int MAX_X_COORD    = 240,
-    parameter int MAX_Y_COORD    = 180,
-    parameter int GRAPH_SIZE     = 128,
-    parameter int INPUT_BIT_TIME = 32,
-    parameter int INPUT_BIT_X    = 8,
-    parameter int INPUT_BIT_Y    = 8,
-    parameter int TIME_WINDOW    = 50000
-)( 
-    input logic                       clk,
-    input logic                       reset,
-    input logic [INPUT_BIT_TIME-1: 0] timestamp,
-    input logic [INPUT_BIT_X-1 : 0]   x_coord,
-    input logic [INPUT_BIT_Y-1 : 0]   y_coord,
-    input logic                       polarity,
-    input logic                       is_valid,
-    output graph_pkg::event_type      out_event,
-    output logic                      reset_context
+import graph_pkg::*;
+
+module normalize#(
+
+)(
+    input     logic                         clk,
+    input     logic                         reset,
+    input     event_type                    in_event,
+    input     edge_type   [MAX_EDGES-1 : 0] in_edges,
+    output    event_type                    out_event,
+    output    edge_type   [MAX_EDGES-1 : 0] out_edges
 );
+    logic signed [F_WIDTH-1 : 0] base_num = NUM_CHANNEL; 
 
-    graph_pkg::event_type       register;
-    logic [INPUT_BIT_TIME-1: 0] timestamp_reg;
-    logic                       reset_mem;
-    logic                       reset_mem_reg;
-
-    always @(posedge clk) begin
-        if (reset) begin
-            register <= '0;
-            reset_mem <= 1'b0;
-        end
-        else begin
-            timestamp_reg <= ((timestamp % TIME_WINDOW)*(GRAPH_SIZE));
-            register.x <= (x_coord*(GRAPH_SIZE)/MAX_X_COORD);
-            register.y <= (y_coord*(GRAPH_SIZE)/MAX_Y_COORD);
-            register.p <= polarity;
-            reset_mem <= 1'b0;
-            register.valid <= '0;
-            if (is_valid) begin
-                register.valid <= '1;
-                if (timestamp > TIME_WINDOW) begin
-                    reset_mem <= 1'b1;
-                end
-            end
-            out_event <= register;
-            out_event.t <= timestamp_reg / TIME_WINDOW;
-            reset_mem_reg <= reset_mem;
-        end
-    end
-
-    assign reset_context = reset_mem;
-
-endmodule : normalize
+    //implement normalization later
+    //event normalization
+    event_type temp_event;
+    
+    assign temp_event.t = in_event.valid ? in_event.t : '0;
+//    assign temp_event.f = in_event.valid ? ((in_event.f <<< 1) - base_num) <<< (SCALE - 10)  : '0;
+    assign temp_event.f = in_event.valid ? in_event.f  : '0;
+//    assign temp_event.n = in_event.valid ? in_event.n  : '0;
+    assign temp_event.valid = in_event.valid;
+    
+    assign out_event.t = temp_event.valid ? temp_event.t : '0;
+    assign out_event.f = temp_event.valid ? temp_event.f: '0;
+//    assign out_event.n = temp_event.valid ? temp_event.n: '0;
+    assign out_event.valid = temp_event.valid;
+    
+    
+    //edge normalization
+    edge_type [MAX_EDGES-1 : 0] temp_edge;
+    
+    genvar i;
+    
+    generate
+        for (i=0;i<MAX_EDGES;i=i+1) begin
+                assign temp_edge[i].t            = in_edges[i].is_connected ? in_edges[i].t : '0;
+//                assign temp_edge[i].f            = in_edges[i].is_connected ? (((in_edges[i].f <<< 1) - base_num) <<< (SCALE - 10)) : '0;
+                assign temp_edge[i].f            = in_edges[i].is_connected ? in_edges[i].f : '0;
+                assign temp_edge[i].dt           = in_edges[i].is_connected ? in_edges[i].dt : '0;
+//                assign temp_edge[i].df           = in_edges[i].is_connected ? ((in_edges[i].df <<< 1) <<< (SCALE - 10)) : '0;
+                assign temp_edge[i].df           = in_edges[i].is_connected ? in_edges[i].df : '0;
+//                assign temp_edge[i].n            = in_edges[i].is_connected ? in_edges[i].n : '0;
+                assign temp_edge[i].is_connected = in_edges[i].is_connected;
+  
+                assign out_edges[i].t            = temp_edge[i].is_connected ? temp_edge[i].t : '0;
+                assign out_edges[i].f            = temp_edge[i].is_connected ? temp_edge[i].f: '0;
+                assign out_edges[i].dt           = temp_edge[i].is_connected ? temp_edge[i].dt: '0;
+                assign out_edges[i].df           = temp_edge[i].is_connected ? temp_edge[i].df: '0;
+//                assign out_edges[i].n            = temp_edge[i].is_connected ? temp_edge[i].n : '0;
+                assign out_edges[i].is_connected = temp_edge[i].is_connected;
+            end           
+    endgenerate
+    
+    
+endmodule

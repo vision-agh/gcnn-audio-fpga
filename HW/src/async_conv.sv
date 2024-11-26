@@ -1,103 +1,65 @@
 `timescale 1ns / 1ps
 
+import graph_pkg::*;
+
 module async_conv #(
-    parameter int GRAPH_SIZE        = graph_pkg::GRAPH_SIZE,
-    parameter int PRECISION	        = graph_pkg::PRECISION,
-    parameter int INPUT_DIM         = 4,
-    parameter int OUTPUT_DIM        = 16,
-    parameter int MULTIPLIER_OUT    = 28877700,
-    parameter int ZERO_POINT        = 126,
-    parameter int SCALE_IN [2:0]    = {0, 0, 0}
+    parameter int INPUT_DIM = INPUT_DIM_1,
+    parameter int OUTPUT_DIM = OUTPUT_DIM_1
 )( 
-    input  logic                                             clk,
-    input  logic                                             reset,
-    input  graph_pkg::event_type                             in_event,
-    input  graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] in_edges,
+    input  logic                             clk,
+    input  logic                             reset,
+    input  event_type                        in_event,
+    input  edge_type   [MAX_EDGES-1 : 0]     in_edges,
 
-    input logic signed [PRECISION:0]                         weights [OUTPUT_DIM-1:0][INPUT_DIM-1:0],
-    input logic signed [31:0]                                bias [15:0],
+    input  logic signed [PRECISION : 0]    weights   [OUTPUT_DIM-1 : 0][INPUT_DIM-1 : 0],
+    input  logic signed [PRECISION : 0]    bias      [OUTPUT_DIM-1 : 0],
 
-    output graph_pkg::event_type                             out_event,
-    output graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] out_edges,
-    output logic        [PRECISION-1 :0]                     features [OUTPUT_DIM-1 : 0]
+    output event_type                        out_event,
+    output edge_type    [MAX_EDGES-1 : 0]    out_edges,
+    output logic [PRECISION-1 : 0]    features  [OUTPUT_DIM-1 : 0] //signed but only pos
 );
-    localparam GRAPH_WIDTH    = $clog2(GRAPH_SIZE);
-    localparam MEMORY_OPS_NUM = graph_pkg::MEMORY_OPS_NUM;
-    
-    // Relative position input feature quantization parameters
-    localparam logic signed [PRECISION:0] NEG_3 = -SCALE_IN[2];
-    localparam logic signed [PRECISION:0] NEG_2 = -SCALE_IN[1];
-    localparam logic signed [PRECISION:0] NEG_1 = -SCALE_IN[0];
-    localparam logic signed [PRECISION:0] POS_1 = SCALE_IN[0];
-    localparam logic signed [PRECISION:0] POS_2 = SCALE_IN[1];
-    localparam logic signed [PRECISION:0] POS_3 = SCALE_IN[2];
 
-    // Context for vertex edges parameters
-    localparam logic signed [PRECISION:0] FEATURES_A_X [MEMORY_OPS_NUM-1:0] = {0, NEG_1, NEG_2, NEG_3, POS_2,  POS_1, 0, NEG_1, NEG_2, POS_2,  POS_1, 0, NEG_1, NEG_2, 0};
-    localparam logic signed [PRECISION:0] FEATURES_B_X [MEMORY_OPS_NUM-1:0] = {0, POS_2, POS_1, 0, NEG_1, NEG_2, POS_2, POS_1, 0, NEG_1, NEG_2, POS_3, POS_2, POS_1, 0};
-    localparam logic signed [PRECISION:0] FEATURES_B_Y [MEMORY_OPS_NUM-1:0] = {POS_3, POS_2, POS_2, POS_2, POS_2, POS_2, POS_1, POS_1, POS_1, POS_1, POS_1, 0, 0, 0, 0};
-    localparam logic signed [PRECISION:0] FEATURES_A_Y [MEMORY_OPS_NUM-1:0] = {0, 0, 0, 0, NEG_1, NEG_1, NEG_1, NEG_1, NEG_1, NEG_2, NEG_2, NEG_2, NEG_2, NEG_2, NEG_3};
+//    event_type                             temp_event;
+    edge_type   [MAX_EDGES-1 : 0]          temp_edges;
 
-    graph_pkg::event_type                             temp_event;
-    graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] temp_edges;
-    graph_pkg::event_type                             reg_event;
-    graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] reg_edges;
-    graph_pkg::event_type                             h1_event;
-    graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] h1_edges;
-    graph_pkg::event_type                             h2_event;
-    graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] h2_edges;
+    logic [$clog2(MEMORY_OPS_NUM)-1 : 0]  counter;
 
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0] counter;
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0] counter_h1;
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0] counter_h2;
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0] counter_reg;
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0] counter_out;
-
-    logic signed [PRECISION:0] feature_mat_a [INPUT_DIM-1:0];
-    logic signed [PRECISION:0] feature_mat_b [INPUT_DIM-1:0];
-
-    logic [PRECISION-1:0] output_mat_a [OUTPUT_DIM-1:0];
-    logic [PRECISION-1:0] output_mat_b [OUTPUT_DIM-1:0];
-    logic [PRECISION-1:0] output_mat   [OUTPUT_DIM-1:0];
+    //SHOULD FIX HERE
+    logic signed [PRECISION : 0]  feature_mat_a  [INPUT_DIM-1 : 0];
+    logic signed [PRECISION : 0]  feature_mat_b  [INPUT_DIM-1 : 0];
+    logic signed [PRECISION : 0]  output_mat_a   [OUTPUT_DIM-1 : 0];
+    logic signed [PRECISION : 0]  output_mat_b   [OUTPUT_DIM-1 : 0];
+                  
+    logic [PRECISION-1 : 0]  features_a     [OUTPUT_DIM-1 : 0];
+    logic [PRECISION-1 : 0]  features_b     [OUTPUT_DIM-1 : 0];
 
     // Counters control, input data assignments
     always @(posedge clk) begin
         if (reset) begin
             counter <= 0;
-            counter_reg <= 0;
-            counter_h1 <= '0;
-            counter_h2 <= '0;
-            counter_out <= '0;
-        end
-        else begin
-            counter_h1 <= counter;
-            counter_h2 <= counter_h1;
-            counter_reg <= counter_h2;
-            counter_out <= counter_reg;
+        end else begin
             if (in_event.valid) begin
-                temp_event <= in_event;
                 temp_edges <= in_edges;
                 counter <= 0;
             end
             if (counter < MEMORY_OPS_NUM-1) begin
-                counter <= counter +1;
+                counter <= counter + 1;
             end
         end
     end
-    
-    // Port A
+
+    // feature_mat f, t, dt, dy
+    // porta
     always @(posedge clk) begin
-        feature_mat_a[0] <= (counter==MEMORY_OPS_NUM-1) ? (temp_event.p * POS_1) : (temp_edges[counter].attribute * POS_1);
-        feature_mat_a[1] <= FEATURES_A_X[counter];
-        feature_mat_a[2] <= FEATURES_A_Y[counter];
-        feature_mat_a[3] <= (counter==MEMORY_OPS_NUM-1) ? 0 : (temp_edges[counter].t == 1 ? NEG_1 : (temp_edges[counter].t == 2 ? NEG_2 : (temp_edges[counter].t == 3 ? NEG_3 : 0)));
+        feature_mat_a[0] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : (temp_edges[counter].f ));
+        feature_mat_a[1] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : (temp_edges[counter].t )) >>> (T_WIDTH-PRECISION);
+        feature_mat_a[2] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : (temp_edges[counter].df));
+        feature_mat_a[3] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : (temp_edges[counter].dt)) >>> (T_WIDTH-PRECISION);
     end
 
     matrix_multiplication #(
-        .INPUT_DIM         ( INPUT_DIM         ),
-        .OUTPUT_DIM        ( OUTPUT_DIM        ),
-        .MULTIPLIER        ( MULTIPLIER_OUT    ),
-        .ZERO_POINT        ( ZERO_POINT        )
+        .INPUT_DIM (INPUT_DIM),
+        .OUTPUT_DIM (OUTPUT_DIM)
     ) mul_a (
         .clk             ( clk             ),
         .reset           ( reset           ),
@@ -107,19 +69,17 @@ module async_conv #(
         .output_matrix   ( output_mat_a    )
     );
 
-    // PORT B
+    // portb
     always @(posedge clk) begin
-       feature_mat_b[0] <= temp_edges[MEMORY_OPS_NUM-1+counter].attribute * POS_1;
-       feature_mat_b[1] <= FEATURES_B_X[counter];
-       feature_mat_b[2] <= FEATURES_B_Y[counter]; 
-       feature_mat_b[3] <= (temp_edges[MEMORY_OPS_NUM-1+counter].t == 1 ? NEG_1 : (temp_edges[MEMORY_OPS_NUM-1+counter].t == 2 ? NEG_2 : (temp_edges[MEMORY_OPS_NUM-1+counter].t == 3 ? NEG_3 : 0)));
+        feature_mat_b[0] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : temp_edges[counter + MEMORY_OPS_NUM-1].f );
+        feature_mat_b[1] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : temp_edges[counter + MEMORY_OPS_NUM-1].t ) >>> (T_WIDTH-PRECISION);
+        feature_mat_b[2] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : temp_edges[counter + MEMORY_OPS_NUM-1].df);
+        feature_mat_b[3] <= ((counter == MEMORY_OPS_NUM-1) ? '0 : temp_edges[counter + MEMORY_OPS_NUM-1].dt) >>> (T_WIDTH-PRECISION);
     end
 
     matrix_multiplication #(
-        .INPUT_DIM         ( INPUT_DIM         ),
-        .OUTPUT_DIM        ( OUTPUT_DIM        ),
-        .MULTIPLIER        ( MULTIPLIER_OUT    ),
-        .ZERO_POINT        ( ZERO_POINT        )
+        .INPUT_DIM (INPUT_DIM),
+        .OUTPUT_DIM (OUTPUT_DIM)
     ) mul_b (
         .clk             ( clk             ),
         .reset           ( reset           ),
@@ -128,53 +88,45 @@ module async_conv #(
         .weight_matrix   ( weights         ),
         .output_matrix   ( output_mat_b    )
     );
+    
+    logic [PRECISION-1:0] zero = '0;
 
-    // Features calculation (including ReLU activation)
-    logic [1:0] condition;
-    assign condition = {reg_edges[MEMORY_OPS_NUM-1+counter_reg].is_connected, (reg_edges[counter_reg].is_connected || counter_reg==MEMORY_OPS_NUM-1)};
+    // RELU
     genvar i;
     generate
         for (i = 0; i < OUTPUT_DIM; i++) begin : rows
             always @(posedge clk) begin
-                output_mat[i] <= condition == 2'b11 ? (output_mat_a[i] > output_mat_b[i] ? output_mat_a[i] : output_mat_b[i]) : 
-                                                      (condition == 2'b00 ? 8'b00000000 : (condition == 2'b01 ? output_mat_a[i] : output_mat_b[i]));
-                if (counter_out == 0) begin
-                    features[i] <= ZERO_POINT > output_mat[i] ? ZERO_POINT : output_mat[i];
-                end
-                else begin
-                    features[i] <= features[i] > output_mat[i] ? features[i] : output_mat[i];
-                end
+                features_a[i] <= (ZERO_POINT > output_mat_a[i]) ? ZERO_POINT : $unsigned(output_mat_a[i]);
+                features_b[i] <= (ZERO_POINT > output_mat_b[i]) ? ZERO_POINT : $unsigned(output_mat_b[i]);
+            end
+            
+            always @(posedge clk) begin
+                features[i] <= features_a[i] > features_b[i] ? features_a[i] : features_b[i];
             end
         end
     endgenerate
 
     // Output control, valid delay
-    logic valid_d1;
-    
     delay_module #(
-        .N        ( 1  ),
-        .DELAY    ( 19 )
-    ) delay_valid_2 (
+        .N        ( F_WIDTH + T_WIDTH  + 1  ),
+        .DELAY    ( 4 ) 
+    ) delay_event (
         .clk   ( clk            ),
-        .idata ( in_event.valid ),
-        .odata ( valid_d1       )
+        .idata ( {in_event.t,  in_event.f, in_event.valid } ),
+        .odata ( {out_event.t, out_event.f, out_event.valid} )
     );
 
-    graph_pkg::event_type				              out_reg_event;
-    graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] out_reg_edges;
-
-    always @(posedge clk) begin
-        h1_event <= temp_event;
-        h1_edges <= temp_edges;
-        h2_event <= h1_event;
-        h2_edges <= h1_edges;
-        reg_event <= h2_event;
-        reg_edges <= h2_edges;
-        out_reg_event <= reg_event;
-        out_reg_edges <= reg_edges;
-        out_event <= out_reg_event;
-        out_edges <= out_reg_edges;
-        out_event.valid <= valid_d1;
-    end
-
+    genvar j;
+    generate
+        for (j = 0; j < MAX_EDGES; j = j + 1) begin
+            delay_module #(
+                .N        ( F_WIDTH*2 + T_WIDTH*2  + 1  ),
+                .DELAY    ( 4 ) // in_event -
+            ) delay_edges (
+                .clk   ( clk            ),
+                .idata ( {in_edges[j].t,  in_edges[j].f,  in_edges[j].dt,  in_edges[j].df, in_edges[j].is_connected } ),
+                .odata ( {out_edges[j].t, out_edges[j].f, out_edges[j].dt, out_edges[j].df, out_edges[j].is_connected} )
+            );            
+        end
+    endgenerate 
 endmodule
