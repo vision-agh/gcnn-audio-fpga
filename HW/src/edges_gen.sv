@@ -1,128 +1,73 @@
 `timescale 1ns / 1ps
 
+import graph_pkg::*;
+
 module edges_gen #(
-    parameter int GRAPH_SIZE     = graph_pkg::GRAPH_SIZE,
-    parameter int RADIUS         = graph_pkg::RADIUS,
-    parameter int TIME_WINDOW    = graph_pkg::TIME_WINDOW
-)( 
-    input  logic                                             clk,
-    input  logic                                             reset,
-    input  graph_pkg::event_type                             in_event,
-    output graph_pkg::event_type                             out_event,
-    output graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] edges,
-    input  logic                                             reset_context
+    parameter int AWIDTH      = $clog2(NUM_CHANNEL), 
+    parameter int DWIDTH      = T_WIDTH + 1,        
+    parameter int FIFO_DEPTH  = 2**14,
+    parameter int FIFO_WIDTH  = T_WIDTH + F_WIDTH + 1
+)(
+    input  logic                              clk,
+    input  logic                              reset,
+    input  logic signed [T_WIDTH-1:0]         t,
+    input  logic signed [F_WIDTH-1:0]         f,
+    input  logic                              is_valid,
+    output event_type                         out_event,
+    output edge_type    [MAX_EDGES-1:0]       out_edges,
+    output logic        [N_WIDTH-1:0]         n,
+    output logic                              empty
 );
-    localparam GRAPH_WIDTH    = $clog2(GRAPH_SIZE); // The GRAPH values width in bits
-    localparam MEMORY_OPS_NUM = graph_pkg::MEMORY_OPS_NUM;
 
-    localparam logic [1:0] MEM_ADDR_A_X [MEMORY_OPS_NUM-1:0] = graph_pkg::MEM_ADDR_A_X;
-    localparam bit         MEM_SIGN_A_X [MEMORY_OPS_NUM-1:0] = graph_pkg::MEM_SIGN_A_X;
+    // Internal signals for FIFO
+    logic wen, fifo_read, full;
+    logic [FIFO_WIDTH-1:0] din, dout;
+    logic [$clog2(MEMORY_OPS_NUM)-1:0] counter, counter_reg;
 
-    localparam logic [1:0] MEM_ADDR_B_X [MEMORY_OPS_NUM-1:0] = graph_pkg::MEM_ADDR_B_X;
-    localparam bit         MEM_SIGN_B_X [MEMORY_OPS_NUM-1:0] = graph_pkg::MEM_SIGN_B_X;
+    // FIFO instantiation
+    fifo_wrapper_0 fifo_0 (
+        .rst_0    ( reset     ),
+        .wr_clk_0 ( clk       ),
+        .wr_en    ( wen       ),
+        .din      ( din       ),
+        .full     ( full      ),
+        .rd_en    ( fifo_read ),
+        .dout     ( dout      ),
+        .empty    ( empty     )
+    );
 
-    localparam logic [1:0] MEM_ADDR_B_Y [MEMORY_OPS_NUM-1:0] = graph_pkg::MEM_ADDR_B_Y;
-    localparam logic [1:0] MEM_ADDR_A_Y [MEMORY_OPS_NUM-1:0] = graph_pkg::MEM_ADDR_A_Y;
+    assign din = {t, f, is_valid};
+    assign wen = is_valid;
 
-    ///////////////////////////////////////////////////////////
-    //                       INPUT FIFO                      //
-    // Store normalized events in case of high dynamic scene //
-    ///////////////////////////////////////////////////////////
-    
-    logic                                     fifo_empty;
-    logic                                     fifo_full;
-    logic                                     fifo_read;
-    logic                                     fifo_write;
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0]      counter;
-    logic [$clog2(GRAPH_SIZE*GRAPH_SIZE) : 0] counter_reset;
-    logic [$clog2(MEMORY_OPS_NUM)-1 : 0]      counter_reg;
-    logic [3*GRAPH_WIDTH:0]                   fifo_in;
-    logic                                     prepare_reset;
-    logic                                     perform_reset;
-    logic [3*GRAPH_WIDTH:0]                   fifo_out;
-    graph_pkg::event_type                     fifo_event;
-    
+    // FIFO event
+    event_type fifo_event, fifo_event_reg;
+
     always @(posedge clk) begin
         if (reset) begin
-            fifo_write <= 0;
-            prepare_reset <= 1'b0;
-            counter_reset <= '0;
-            perform_reset <= 1'b0;
-        end
-        else begin
-            fifo_write <= 0;
-            fifo_in <= {in_event.t, in_event.x, in_event.y, in_event.p};
-            if (in_event.valid) begin
-                fifo_write <= 1;
-            end
-            if (reset_context) begin
-                prepare_reset <= 1'b1;
-            end
-            if (prepare_reset && fifo_empty && out_event.valid) begin
-                prepare_reset <= 1'b0;
-                perform_reset <= 1'b1;
-            end
-            if (perform_reset) begin
-                counter_reset <= counter_reset+1;
-                if (counter_reset == (GRAPH_SIZE*GRAPH_SIZE)/2) begin
-                    perform_reset <= 1'b0;
-                    counter_reset <= '0;
-                end
-            end
+            n <= 0;
+        end else if (is_valid) begin
+            n <= n + 1;
         end
     end
 
-    assign fifo_read = !fifo_empty && counter == MEMORY_OPS_NUM-1;
-    
-    fifo_generator_0 fifo_0 (
-        .clk   ( clk        ),
-        .din   ( fifo_in    ),
-        .wr_en ( fifo_write ),
-        .rd_en ( fifo_read  ),
-        .dout  ( fifo_out   ),
-        .full  ( fifo_full  ),
-        .empty ( fifo_empty )
-    );
-    
-    // synthesis translate_off
-    always @(posedge in_event.valid) begin
-        if (fifo_full) begin
-            $display("FIFO OVERFLOW - EXIT THE SIMULATION");
-            $stop;
-        end
-    end
-    // synthesis translate_on
+    assign fifo_read = !empty && counter == MEMORY_OPS_NUM-1;
 
-    assign fifo_event.t = fifo_out[3*GRAPH_WIDTH : (2*GRAPH_WIDTH)+1];
-    assign fifo_event.x = fifo_out[2*GRAPH_WIDTH : GRAPH_WIDTH+1];
-    assign fifo_event.y = fifo_out[GRAPH_WIDTH   : 1 ];
-    assign fifo_event.p = fifo_out[0];
+    // FIFO output parsing
+    assign fifo_event.t     = dout[T_WIDTH+F_WIDTH:F_WIDTH+1];
+    assign fifo_event.f     = dout[F_WIDTH:1];
+    assign fifo_event.valid = dout[0];
 
-    ////////////////////////////////////////////////////////////
-    //                    UPDATE CONTEXT                      //
-    // Read from context and update it, drop duplicate events //
-    ////////////////////////////////////////////////////////////
+    // Memory interface signals
+    logic [AWIDTH-1:0] addra, addrb;
+    logic [DWIDTH-1:0] dina, douta, doutb;
+    logic ena, wea, web, enb;
 
-    localparam ADDR_WIDTH = $clog2(GRAPH_SIZE*GRAPH_SIZE);
-    localparam DATA_WIDTH = GRAPH_WIDTH+2; //Timestapm, polarity and is_empy
-
-    logic [ADDR_WIDTH-1:0] addra;
-    logic [ADDR_WIDTH-1:0] addrb;
-    logic [DATA_WIDTH-1:0] dina;
-    logic [DATA_WIDTH-1:0] douta;
-    logic [DATA_WIDTH-1:0] doutb;
-
-    logic ena;
-    logic wea;
-    logic web;
-    logic enb;
-
-    // Context memroy module
+    // Context memory instantiation
     memory #(
-        .AWIDTH   ( ADDR_WIDTH ),
-        .DWIDTH   ( DATA_WIDTH ),
-        .RAM_TYPE ( "block"    )
-    ) gen_memory  (
+        .AWIDTH   ( AWIDTH  ),
+        .DWIDTH   ( DWIDTH  ),
+        .RAM_TYPE ( "block" )
+    ) gen_memory (
         .clk      ( clk   ),
         .mem_ena  ( ena   ),
         .wea      ( wea   ),
@@ -136,147 +81,132 @@ module edges_gen #(
         .doutb    ( doutb )
     );
 
-    // Memory control logic
-    logic rd_a;
-    logic wr_a;
-    logic rd_a_reg;
-    logic rd_b_reg;
-    logic drop;
-    logic condition_a;
-    logic condition_b;
-    logic [GRAPH_WIDTH-1:0] x_coord_a;
-    logic [GRAPH_WIDTH-1:0] x_coord_b;
-    graph_pkg::edge_type [graph_pkg::MAX_EDGES-1 : 0] edges_reg;
+
+    logic                     rd_a, rd_b, wr_a, rd_a_reg, rd_b_reg;
+    logic                     condition_a, condition_b;
+    logic     [AWIDTH-1:0]    f_coord_a, f_coord_b, f_coord_a_reg, f_coord_b_reg;
+    edge_type [MAX_EDGES-1:0] edges_reg;
 
     assign rd_a = ena & !wea;
+    assign rd_b = enb & !wea;
     assign wr_a = ena & wea;
 
-    assign ena = perform_reset ? 1'b1 : ((counter <= MEMORY_OPS_NUM-1 & condition_a) ? 1 : 0);
-    assign enb = perform_reset ? 1'b1 : ((counter <= MEMORY_OPS_NUM-1 & condition_b) ? 1 : 0);
-    //assign wea = perform_reset ? 1'b1 : ((counter == MEMORY_OPS_NUM-1 && !drop) ? 1 : 0);
-    assign wea = perform_reset ? 1'b1 : ((counter == MEMORY_OPS_NUM-1) ? 1 : 0);
-    assign web = perform_reset;
+    assign ena  = (counter <= MEMORY_OPS_NUM-1 & condition_a) ? 1 : 0;
+    assign enb  = (counter <= MEMORY_OPS_NUM-1 & condition_b) ? 1 : 0;
+    assign wea  = (counter == 0) ? 1 : 0;
+    assign dina = (counter == 0 & !empty) ? {fifo_event.t, 1'b1} : 0;
+    assign web  = 1'b0;
 
-    assign x_coord_a = (MEM_SIGN_A_X[counter] > 0) ? (fifo_event.x - MEM_ADDR_A_X[counter]) : (fifo_event.x + MEM_ADDR_A_X[counter]);
-    assign x_coord_b = (MEM_SIGN_B_X[counter] > 0) ? (fifo_event.x - MEM_ADDR_B_X[counter]) : (fifo_event.x + MEM_ADDR_B_X[counter]);
+    assign f_coord_a = fifo_event.f + counter;
+    assign f_coord_b = fifo_event.f - counter;
 
-    assign condition_a = (GRAPH_SIZE > x_coord_a + fifo_event.x >= 0) & 
-                         (GRAPH_SIZE > (fifo_event.y - MEM_ADDR_A_Y[counter]) >= 0);
-    assign condition_b = (GRAPH_SIZE > (fifo_event.y + MEM_ADDR_B_Y[counter]) >= 0) &
-                         (GRAPH_SIZE > x_coord_b + fifo_event.x >= 0);
+    assign condition_a = (f_coord_a >= 0) && (f_coord_a < NUM_CHANNEL);
+    assign condition_b = (f_coord_b >= 0) && (f_coord_b < NUM_CHANNEL);
 
-    // ADDR = Y*GRAPH SIZE + X
-    assign addra = perform_reset ? counter_reset : ((fifo_event.y - MEM_ADDR_A_Y[counter]) * GRAPH_SIZE + x_coord_a);
-    assign addrb = perform_reset ? ((GRAPH_SIZE*GRAPH_SIZE-1)-counter_reset) : ((fifo_event.y + MEM_ADDR_B_Y[counter]) * GRAPH_SIZE + x_coord_b);
-    assign dina  = perform_reset ? '0 : {fifo_event.t, fifo_event.p, 1'b1};
-
+    assign addra = f_coord_a;
+    assign addrb = f_coord_b;
+    
+    // Counter and edge processing
     always @(posedge clk) begin
         if (reset) begin
             rd_a_reg <= 0;
             rd_b_reg <= 0;
-            counter_reg <= 0;
             counter <= MEMORY_OPS_NUM-1;
-            drop <= 0;
-        end
-        else begin
+        end else begin
             rd_a_reg <= rd_a;
-            rd_b_reg <= enb;
-            counter_reg <= counter;
+            rd_b_reg <= rd_b;
             if (counter < MEMORY_OPS_NUM-1) begin
                 counter <= counter + 1;
-            end
-            else begin
+            end else begin
                 counter <= 0;
             end
-        
-            // Port A (14 reads and write)
-            if (counter_reg != MEMORY_OPS_NUM-1) begin
-                edges_reg[counter_reg].t <= (rd_a_reg & douta[0]) ? fifo_event.t-douta[DATA_WIDTH-1:2] : '0;
-                edges_reg[counter_reg].attribute <= (rd_a_reg & douta[0]) ? douta[1] : '0;
-                edges_reg[counter_reg].is_connected <= (rd_a_reg & douta[0]) & ((fifo_event.t-douta[DATA_WIDTH-1:2]) < RADIUS) & (fifo_event.t >= douta[DATA_WIDTH-1:2]);
-            end
 
-            // Port B (15 reads)
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].t <= (rd_b_reg & doutb[0]) ? fifo_event.t-doutb[DATA_WIDTH-1:2] : '0;
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].attribute <= (rd_b_reg & doutb[0]) ? doutb[1] : '0;
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].is_connected <= (rd_b_reg & doutb[0]) & ((fifo_event.t-doutb[DATA_WIDTH-1:2]) <= RADIUS) & (fifo_event.t >= doutb[DATA_WIDTH-1:2]);
+            // Port A
+            edges_reg[counter_reg].t <= douta[T_WIDTH:1];
+            edges_reg[counter_reg].f <= f_coord_a_reg;
+            edges_reg[counter_reg].dt <= (rd_a_reg & douta[0]) ? fifo_event_reg.t - douta[T_WIDTH:1] : '0;
+            edges_reg[counter_reg].df <= (rd_a_reg & douta[0]) ? fifo_event_reg.f - f_coord_a_reg : '0;
+            edges_reg[counter_reg].is_connected <= 
+                (rd_a_reg & douta[0]) && 
+                ((fifo_event_reg.t - douta[T_WIDTH:1]) < T_RADIUS) ? 1'b1 : 1'b0;
 
-            // Drop duplicate events
-            //drop <= 0;
-            //if (counter_reg == 0 && (doutb[DATA_WIDTH-1:2] == fifo_event.t) && doutb[0]) begin
-            //    drop <= 1;
-            //    counter <= MEMORY_OPS_NUM-1;
-            //end
-
+            // Port B
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].t <= doutb[T_WIDTH:1];
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].f <= f_coord_b_reg;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].dt <= (rd_b_reg & doutb[0]) ? fifo_event_reg.t - doutb[T_WIDTH:1] : '0;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].df <= (rd_b_reg & doutb[0]) ? fifo_event_reg.f - f_coord_b_reg : '0;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].is_connected <= 
+                (rd_b_reg & doutb[0]) && 
+                ((fifo_event_reg.t - doutb[T_WIDTH:1]) < T_RADIUS) ? 1'b1 : 1'b0;
         end
     end
-    
-    ///////////////////////////////////////////////////////////////
-    //                         DELAY EVENT                       //
-    // Delay event form FIFO to output to synchronize with edges //
-    ///////////////////////////////////////////////////////////////
 
-    logic valid_d1;
-    logic valid_d2;
-    logic valid_d3;
-   
     delay_module #(
-        .N       ( 1 ),
-        .DELAY   ( 3 )
-    ) delay_valid_1  (
-        .clk   ( clk       ),
-        .idata ( fifo_read ),
-        .odata ( valid_d1  )
-    );
-
-    //assign valid_d2 = valid_d1 & !drop;
-    assign valid_d2 = valid_d1;
-    
-    delay_module #(
-        .N        ( 1  ),
-        .DELAY    ( 12 )
-    ) delay_valid_2 (
-        .clk   ( clk      ),
-        .idata ( valid_d2 ),
-        .odata ( valid_d3 )
+        .N (AWIDTH*2),
+        .DELAY (1)
+    ) delay_f_coord (
+        .clk ( clk ),
+        .idata ( {f_coord_a,f_coord_b}         ),
+        .odata ( {f_coord_a_reg,f_coord_b_reg} )
     );
     
-    ///////////////////////////////////////////////////////
-    //                  CHECK CONDITION                  //
-    // Check neighbourhood condition and generate edges  //
-    ///////////////////////////////////////////////////////
-
-    graph_pkg::event_type h1_event;
-    graph_pkg::event_type reg_event;
-
-    // Control output event
-    always @(posedge clk) begin
-        h1_event <= fifo_event;
-        h1_event.valid <= valid_d3;
-        reg_event <= h1_event;
-        out_event <= reg_event;
-    end
+    delay_module #(
+        .N        ( F_WIDTH + T_WIDTH+1   ),
+        .DELAY    ( 1 ) 
+    ) delay_fifo_event (
+        .clk   ( clk            ),
+        .idata ( {fifo_event.t,     fifo_event.f,     fifo_event.valid}     ),
+        .odata ( {fifo_event_reg.t, fifo_event_reg.f, fifo_event_reg.valid} )
+    );
     
+    delay_module #(
+        .N        ( $clog2(MEMORY_OPS_NUM)   ),
+        .DELAY    ( 2 ) 
+    ) delay_counter (
+        .clk   ( clk            ),
+        .idata ( counter     ),
+        .odata ( counter_reg )
+    );
+    
+    delay_module #(
+        .N (1),
+        .DELAY (14)
+    ) delay_fifo_read (
+        .clk (clk),
+        .idata ( fifo_read       ),
+        .odata ( out_event.valid )
+    );
+
+    delay_module #(
+        .N        ( F_WIDTH + T_WIDTH   ),
+        .DELAY    ( 3 ) 
+    ) delay_event (
+        .clk   ( clk            ),
+        .idata ( {fifo_event.t,  fifo_event.f} ),
+        .odata ( {out_event.t,   out_event.f} )
+    );
+
+    // Output edges generation
     genvar i, j;
     generate
-        for (i=0; i<MEMORY_OPS_NUM-1; i++) begin: FIRST_13
+        for (i = 0; i < MEMORY_OPS_NUM-1; i++) begin
             always @(posedge clk) begin
-                edges[i].attribute <= edges_reg[i].attribute;
-                edges[i].t <= edges_reg[i].t;
-                edges[i].is_connected <= edges_reg[i].is_connected ? (((MEM_ADDR_A_X[i]**2) +
-                                                                       (MEM_ADDR_A_Y[i]**2) +
-                                                                      ((edges_reg[i].t)**2)) < (RADIUS**2)+1) : '0;
+                out_edges[i].t <= edges_reg[i].is_connected ? edges_reg[i].t : '0;
+                out_edges[i].f <= edges_reg[i].is_connected ? edges_reg[i].f : '0;
+                out_edges[i].dt <= edges_reg[i].is_connected ? edges_reg[i].dt : '0;
+                out_edges[i].df <= edges_reg[i].is_connected ? edges_reg[i].df : '0;
+                out_edges[i].is_connected <= edges_reg[i].is_connected;
             end
         end
-        for (j=MEMORY_OPS_NUM-1; j<graph_pkg::MAX_EDGES; j++) begin: SECOND_14
+        for (j = MEMORY_OPS_NUM-1; j < MAX_EDGES; j++) begin
             always @(posedge clk) begin
-                edges[j].attribute <= edges_reg[j].attribute;
-                edges[j].t <= edges_reg[j].t;
-                edges[j].is_connected <= edges_reg[j].is_connected ? (((MEM_ADDR_B_X[j-(MEMORY_OPS_NUM-1)]**2) +
-                                                                       (MEM_ADDR_B_Y[j-(MEMORY_OPS_NUM-1)]**2) +
-                                                                       ((edges_reg[j].t)**2)) < (RADIUS**2)+1) : '0;
+                out_edges[j].t <= edges_reg[j].is_connected ? edges_reg[j].t : '0;
+                out_edges[j].f <= edges_reg[j].is_connected ? edges_reg[j].f : '0;
+                out_edges[j].dt <= edges_reg[j].is_connected ? edges_reg[j].dt : '0;
+                out_edges[j].df <= edges_reg[j].is_connected ? edges_reg[j].df : '0;
+                out_edges[j].is_connected <= edges_reg[j].is_connected;
             end
         end
     endgenerate
-
 endmodule
+
