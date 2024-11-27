@@ -10,13 +10,15 @@ module edges_gen #(
 )(
     input  logic                              clk,
     input  logic                              reset,
-    input  logic signed [T_WIDTH-1:0]         t,
-    input  logic signed [F_WIDTH-1:0]         f,
+    input  logic signed     [T_WIDTH-1:0]     t,
+    input  logic signed     [F_WIDTH-1:0]     f,
     input  logic                              is_valid,
-    output event_type                         out_event,
-    output edge_type    [MAX_EDGES-1:0]       out_edges,
-    output logic        [N_WIDTH-1:0]         n,
-    output logic                              empty
+    output graph_event_type                   out_event,
+    output graph_edge_type  [MAX_EDGES-1:0]   out_edges,
+    output logic            [N_WIDTH-1:0]     n,
+    output logic                              empty,
+    output logic            [T_WIDTH-1:0]     t_feature,
+    output logic            [F_WIDTH-1:0]     f_feature
 );
 
     // Internal signals for FIFO
@@ -40,7 +42,7 @@ module edges_gen #(
     assign wen = is_valid;
 
     // FIFO event
-    event_type fifo_event, fifo_event_reg;
+    graph_event_type fifo_event, fifo_event_reg;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -82,10 +84,10 @@ module edges_gen #(
     );
 
 
-    logic                     rd_a, rd_b, wr_a, rd_a_reg, rd_b_reg;
-    logic                     condition_a, condition_b;
-    logic     [AWIDTH-1:0]    f_coord_a, f_coord_b, f_coord_a_reg, f_coord_b_reg;
-    edge_type [MAX_EDGES-1:0] edges_reg;
+    logic                           rd_a, rd_b, wr_a, rd_a_reg, rd_b_reg;
+    logic                           condition_a, condition_b;
+    logic           [AWIDTH-1:0]    f_coord_a, f_coord_b, f_coord_a_reg, f_coord_b_reg;
+    graph_edge_type [MAX_EDGES-1:0] edges_reg;
 
     assign rd_a = ena & !wea;
     assign rd_b = enb & !wea;
@@ -106,6 +108,16 @@ module edges_gen #(
     assign addra = f_coord_a;
     assign addrb = f_coord_b;
     
+    logic [26-1 : 0] t_temp;
+    logic [18-1 : 0] f_temp;
+    logic [$clog2(MAX_EDGES)-1 : 0]             num_edges;
+    
+    logic port_a_valid,port_b_valid;
+    assign port_a_valid = (rd_a_reg & douta[0]) && 
+                          ((fifo_event_reg.t - douta[T_WIDTH:1]) < T_RADIUS) ? 1'b1 : 1'b0;
+    assign port_b_valid = (rd_b_reg & doutb[0]) && 
+                          ((fifo_event_reg.t - doutb[T_WIDTH:1]) < T_RADIUS) ? 1'b1 : 1'b0;
+    
     // Counter and edge processing
     always @(posedge clk) begin
         if (reset) begin
@@ -120,26 +132,61 @@ module edges_gen #(
             end else begin
                 counter <= 0;
             end
-
+            if (counter_reg == MEMORY_OPS_NUM-1) begin
+                t_temp <= '0;
+                f_temp <= '0;
+                num_edges <= '0;
+            end else begin
+                t_temp <= t_temp + (port_a_valid ? douta[T_WIDTH:1] : '0) + (port_b_valid ? doutb[T_WIDTH:1] : '0);
+                f_temp <= f_temp + (port_a_valid ? f_coord_a_reg : '0) + (port_b_valid ? f_coord_b_reg : '0);
+                num_edges <= num_edges + port_a_valid + port_b_valid;
+            end
+            
             // Port A
             edges_reg[counter_reg].t <= douta[T_WIDTH:1];
             edges_reg[counter_reg].f <= f_coord_a_reg;
             edges_reg[counter_reg].dt <= (rd_a_reg & douta[0]) ? fifo_event_reg.t - douta[T_WIDTH:1] : '0;
             edges_reg[counter_reg].df <= (rd_a_reg & douta[0]) ? fifo_event_reg.f - f_coord_a_reg : '0;
-            edges_reg[counter_reg].is_connected <= 
-                (rd_a_reg & douta[0]) && 
-                ((fifo_event_reg.t - douta[T_WIDTH:1]) < T_RADIUS) ? 1'b1 : 1'b0;
+            edges_reg[counter_reg].is_connected <= port_a_valid;
 
             // Port B
             edges_reg[MEMORY_OPS_NUM-1+counter_reg].t <= doutb[T_WIDTH:1];
             edges_reg[MEMORY_OPS_NUM-1+counter_reg].f <= f_coord_b_reg;
             edges_reg[MEMORY_OPS_NUM-1+counter_reg].dt <= (rd_b_reg & doutb[0]) ? fifo_event_reg.t - doutb[T_WIDTH:1] : '0;
             edges_reg[MEMORY_OPS_NUM-1+counter_reg].df <= (rd_b_reg & doutb[0]) ? fifo_event_reg.f - f_coord_b_reg : '0;
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].is_connected <= 
-                (rd_b_reg & doutb[0]) && 
-                ((fifo_event_reg.t - doutb[T_WIDTH:1]) < T_RADIUS) ? 1'b1 : 1'b0;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].is_connected <= port_b_valid;
         end
     end
+    
+    logic  divisor_tvalid,dividend_tvalid,t_avg_valid,f_avg_valid;
+    assign divisor_tvalid  = (counter_reg == MEMORY_OPS_NUM-1) && (num_edges != 0);
+    assign dividend_tvalid = (counter_reg == MEMORY_OPS_NUM-1) && (num_edges != 0);
+    
+    logic [32-1 : 0] temp_t_feature;
+    logic [24-1 : 0] temp_f_feature;
+    assign t_feature = t_avg_valid ? temp_t_feature[22:2] : '0;
+    assign f_feature = f_avg_valid ? {3'b0,temp_f_feature[19:2]} : '0;
+    
+    
+    div_t div_t (
+        .aclk                   ( clk             ),
+        .s_axis_divisor_tdata   ( num_edges       ),
+        .s_axis_divisor_tvalid  ( divisor_tvalid  ),
+        .s_axis_dividend_tdata  ( t_temp          ),
+        .s_axis_dividend_tvalid ( dividend_tvalid ),
+        .m_axis_dout_tdata      ( temp_t_feature  ),//32
+        .m_axis_dout_tvalid     ( t_avg_valid     )
+    );
+    
+    div_f div_f (
+        .aclk                   ( clk             ),
+        .s_axis_divisor_tdata   ( num_edges       ),
+        .s_axis_divisor_tvalid  ( divisor_tvalid  ),
+        .s_axis_dividend_tdata  ( f_temp          ),
+        .s_axis_dividend_tvalid ( dividend_tvalid ),
+        .m_axis_dout_tdata      ( temp_f_feature  ),//32
+        .m_axis_dout_tvalid     ( f_avg_valid     )
+    );
 
     delay_module #(
         .N (AWIDTH*2),

@@ -40,7 +40,20 @@ package graph_pkg;
     
     parameter SKIP_STEP = 10;
 
-
+    typedef struct packed {
+      logic signed [T_WIDTH -1: 0] t;
+      logic signed [F_WIDTH -1: 0] f;
+      logic                         valid;
+    } graph_event_type;
+    
+    typedef struct packed {
+      logic signed [T_WIDTH-1 : 0] t;
+      logic signed [F_WIDTH-1 : 0] f;
+      logic signed [T_WIDTH-1 : 0] dt;
+      logic signed [F_WIDTH-1 : 0] df;
+      logic                      is_connected;
+    } graph_edge_type;
+    
     typedef struct packed {
       logic signed [T_WIDTH -1: 0] t;
       logic signed [F_WIDTH -1: 0] f;
@@ -48,10 +61,7 @@ package graph_pkg;
     } event_type;
     
     typedef struct packed {
-      logic signed [T_WIDTH-1 : 0] t;
-      logic signed [F_WIDTH-1 : 0] f;
       logic signed [T_WIDTH-1 : 0] dt;
-      logic signed [F_WIDTH-1 : 0] df;
       logic                      is_connected;
     } edge_type;
 
