@@ -2,7 +2,7 @@
 
 import graph_pkg::*;
 
-parameter int DATA_NUM = 6575;
+parameter int DATA_NUM = 7934;
 
 module tb_generate_graph;
 
@@ -21,6 +21,8 @@ module tb_generate_graph;
     
     logic [T_WIDTH+F_WIDTH-1 : 0] mem [DATA_NUM-1 : 0];
     logic empty;
+    output logic            [T_WIDTH-1:0]     t_features;
+    output logic            [F_WIDTH-1:0]     f_features;
 
     integer outfile;
     integer mem_index;
@@ -41,7 +43,9 @@ module tb_generate_graph;
         .f(f),
         .is_valid(is_valid),
         .out_event(out_event),
-        .out_edges(out_edges)
+        .out_edges(out_edges),
+        .t_features(t_features),
+        .f_features(f_features)
     );
 
     // Clock generation

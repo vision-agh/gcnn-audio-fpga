@@ -4,9 +4,8 @@ import graph_pkg::*;
 
 module edges_gen #(
     parameter int AWIDTH      = $clog2(NUM_CHANNEL), 
-    parameter int DWIDTH      = T_WIDTH + 1,        
-    parameter int FIFO_DEPTH  = 2**14,
-    parameter int FIFO_WIDTH  = T_WIDTH + F_WIDTH + 1
+    parameter int DWIDTH      = T_WIDTH + 1,
+    parameter int FIFO_WIDTH  = T_WIDTH + F_WIDTH + 1  
 )(
     input  logic                              clk,
     input  logic                              reset,
@@ -21,12 +20,10 @@ module edges_gen #(
     output logic            [F_WIDTH-1:0]     f_feature
 );
 
-    // Internal signals for FIFO
-    logic wen, fifo_read, full;
-    logic [FIFO_WIDTH-1:0] din, dout;
+    logic                              wen, fifo_read, full;
+    logic [FIFO_WIDTH-1:0]             din, dout;
     logic [$clog2(MEMORY_OPS_NUM)-1:0] counter, counter_reg;
 
-    // FIFO instantiation
     fifo_wrapper_0 fifo_0 (
         .rst_0    ( reset     ),
         .wr_clk_0 ( clk       ),
@@ -41,7 +38,6 @@ module edges_gen #(
     assign din = {t, f, is_valid};
     assign wen = is_valid;
 
-    // FIFO event
     graph_event_type fifo_event, fifo_event_reg;
 
     always @(posedge clk) begin
@@ -143,17 +139,17 @@ module edges_gen #(
             end
             
             // Port A
-            edges_reg[counter_reg].t <= douta[T_WIDTH:1];
-            edges_reg[counter_reg].f <= f_coord_a_reg;
-            edges_reg[counter_reg].dt <= (rd_a_reg & douta[0]) ? fifo_event_reg.t - douta[T_WIDTH:1] : '0;
-            edges_reg[counter_reg].df <= (rd_a_reg & douta[0]) ? fifo_event_reg.f - f_coord_a_reg : '0;
-            edges_reg[counter_reg].is_connected <= port_a_valid;
+            edges_reg[counter_reg].t                             <= douta[T_WIDTH:1];
+            edges_reg[counter_reg].f                             <= f_coord_a_reg;
+            edges_reg[counter_reg].dt                            <= (rd_a_reg & douta[0]) ? fifo_event_reg.t - douta[T_WIDTH:1] : '0;
+            edges_reg[counter_reg].df                            <= (rd_a_reg & douta[0]) ? fifo_event_reg.f - f_coord_a_reg : '0;
+            edges_reg[counter_reg].is_connected                  <= port_a_valid;
 
             // Port B
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].t <= doutb[T_WIDTH:1];
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].f <= f_coord_b_reg;
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].dt <= (rd_b_reg & doutb[0]) ? fifo_event_reg.t - doutb[T_WIDTH:1] : '0;
-            edges_reg[MEMORY_OPS_NUM-1+counter_reg].df <= (rd_b_reg & doutb[0]) ? fifo_event_reg.f - f_coord_b_reg : '0;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].t            <= doutb[T_WIDTH:1];
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].f            <= f_coord_b_reg;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].dt           <= (rd_b_reg & doutb[0]) ? fifo_event_reg.t - doutb[T_WIDTH:1] : '0;
+            edges_reg[MEMORY_OPS_NUM-1+counter_reg].df           <= (rd_b_reg & doutb[0]) ? fifo_event_reg.f - f_coord_b_reg : '0;
             edges_reg[MEMORY_OPS_NUM-1+counter_reg].is_connected <= port_b_valid;
         end
     end
@@ -170,21 +166,21 @@ module edges_gen #(
     
     div_t div_t (
         .aclk                   ( clk             ),
-        .s_axis_divisor_tdata   ( num_edges       ),
+        .s_axis_divisor_tdata   ( num_edges       ),//5bit
         .s_axis_divisor_tvalid  ( divisor_tvalid  ),
         .s_axis_dividend_tdata  ( t_temp          ),
-        .s_axis_dividend_tvalid ( dividend_tvalid ),
-        .m_axis_dout_tdata      ( temp_t_feature  ),//32
+        .s_axis_dividend_tvalid ( dividend_tvalid ),//26bit
+        .m_axis_dout_tdata      ( temp_t_feature  ),
         .m_axis_dout_tvalid     ( t_avg_valid     )
     );
     
     div_f div_f (
         .aclk                   ( clk             ),
-        .s_axis_divisor_tdata   ( num_edges       ),
+        .s_axis_divisor_tdata   ( num_edges       ),//5bit
         .s_axis_divisor_tvalid  ( divisor_tvalid  ),
-        .s_axis_dividend_tdata  ( f_temp          ),
+        .s_axis_dividend_tdata  ( f_temp          ),//18bit
         .s_axis_dividend_tvalid ( dividend_tvalid ),
-        .m_axis_dout_tdata      ( temp_f_feature  ),//32
+        .m_axis_dout_tdata      ( temp_f_feature  ),
         .m_axis_dout_tvalid     ( f_avg_valid     )
     );
 
@@ -210,7 +206,7 @@ module edges_gen #(
         .N        ( $clog2(MEMORY_OPS_NUM)   ),
         .DELAY    ( 2 ) 
     ) delay_counter (
-        .clk   ( clk            ),
+        .clk   ( clk         ),
         .idata ( counter     ),
         .odata ( counter_reg )
     );
@@ -219,7 +215,7 @@ module edges_gen #(
         .N (1),
         .DELAY (14)
     ) delay_fifo_read (
-        .clk (clk),
+        .clk   ( clk             ),
         .idata ( fifo_read       ),
         .odata ( out_event.valid )
     );
@@ -238,19 +234,19 @@ module edges_gen #(
     generate
         for (i = 0; i < MEMORY_OPS_NUM-1; i++) begin
             always @(posedge clk) begin
-                out_edges[i].t <= edges_reg[i].is_connected ? edges_reg[i].t : '0;
-                out_edges[i].f <= edges_reg[i].is_connected ? edges_reg[i].f : '0;
-                out_edges[i].dt <= edges_reg[i].is_connected ? edges_reg[i].dt : '0;
-                out_edges[i].df <= edges_reg[i].is_connected ? edges_reg[i].df : '0;
+                out_edges[i].t            <= edges_reg[i].is_connected ? edges_reg[i].t : '0;
+                out_edges[i].f            <= edges_reg[i].is_connected ? edges_reg[i].f : '0;
+                out_edges[i].dt           <= edges_reg[i].is_connected ? edges_reg[i].dt : '0;
+                out_edges[i].df           <= edges_reg[i].is_connected ? edges_reg[i].df : '0;
                 out_edges[i].is_connected <= edges_reg[i].is_connected;
             end
         end
         for (j = MEMORY_OPS_NUM-1; j < MAX_EDGES; j++) begin
             always @(posedge clk) begin
-                out_edges[j].t <= edges_reg[j].is_connected ? edges_reg[j].t : '0;
-                out_edges[j].f <= edges_reg[j].is_connected ? edges_reg[j].f : '0;
-                out_edges[j].dt <= edges_reg[j].is_connected ? edges_reg[j].dt : '0;
-                out_edges[j].df <= edges_reg[j].is_connected ? edges_reg[j].df : '0;
+                out_edges[j].t            <= edges_reg[j].is_connected ? edges_reg[j].t : '0;
+                out_edges[j].f            <= edges_reg[j].is_connected ? edges_reg[j].f : '0;
+                out_edges[j].dt           <= edges_reg[j].is_connected ? edges_reg[j].dt : '0;
+                out_edges[j].df           <= edges_reg[j].is_connected ? edges_reg[j].df : '0;
                 out_edges[j].is_connected <= edges_reg[j].is_connected;
             end
         end

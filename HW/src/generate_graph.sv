@@ -13,12 +13,16 @@ module generate_graph #(
 
     output graph_event_type                   out_event,
     output graph_edge_type  [MAX_EDGES-1 : 0] out_edges,
+    output logic            [T_WIDTH-1:0]     t_features,
+    output logic            [F_WIDTH-1:0]     f_features,
     output logic            [N_WIDTH-1:0]     n,
     output logic                              empty
 );
 
     graph_event_type                    event_to_normalize;
     graph_edge_type   [MAX_EDGES-1 : 0] edges_to_normalize;
+    logic             [T_WIDTH-1 : 0]   t_feature_to_normalize;
+    logic             [F_WIDTH-1 : 0]   f_feature_to_normalize;
 
     edges_gen #(
     ) u_edges_gen (
@@ -50,4 +54,4 @@ module generate_graph #(
         .out_f_features ( f_features             )
     );
 
-endmodule : generate_graph
+endmodule
