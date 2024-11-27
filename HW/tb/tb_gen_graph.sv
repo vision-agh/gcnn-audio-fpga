@@ -16,8 +16,8 @@ module tb_generate_graph;
     logic is_valid;
 
     // Outputs from generate_graph
-    event_type out_event;
-    edge_type [MAX_EDGES-1:0] out_edges;
+    graph_event_type out_event;
+    graph_edge_type [MAX_EDGES-1:0] out_edges;
     
     logic [T_WIDTH+F_WIDTH-1 : 0] mem [DATA_NUM-1 : 0];
     logic empty;
