@@ -30,7 +30,7 @@ class SpikingDS(Dataset):
         data.pos = data.pos[mask] # Cut data to time window
 
         # TODO: Generate edge_index here
-        data.edge_index = self.generate_edges(data.pos[:, 0], 
+        data.edge_index, data.x = self.generate_edges(data.pos[:, 0], 
                                               data.pos[:, 1],
                                               self.time_radius,
                                               self.channel_radius)
@@ -40,7 +40,6 @@ class SpikingDS(Dataset):
         data.pos[:, 1] = data.pos[:, 1] / self.num_channels
 
         # TODO: Generate node features here
-        data.x = torch.ones(data.pos.shape[0], 1)
 
         return data
     
@@ -50,13 +49,20 @@ class SpikingDS(Dataset):
                        time_radius: float = 0.02, 
                        channel_radius: int = 10):
         edges = []
+        feature = []
+        
         channel_last_event = [None] * self.num_channels
 
         for idx, (time, channel) in enumerate(zip(times, channels)):
+
+            sum_t = 0
+            sum_channel = 0
+            sum_idx = 0
+
             time, channel = time.item(), channel.item()
 
-            for n_channel in (max(0, int(channel - channel_radius)), 
-                              min(self.num_channels - 1, int(channel + channel_radius + 1))):
+            for n_channel in range(max(0, int(channel - channel_radius)), 
+                              min(self.num_channels - 1, int(channel + channel_radius + 1)), 10):
                 
                 if channel_last_event[n_channel] is not None:
                     n_time, n_idx = channel_last_event[n_channel]
@@ -64,10 +70,25 @@ class SpikingDS(Dataset):
                     if time - n_time <= time_radius:
                         edges.append((n_idx, idx))
 
-            channel_last_event[int(channel)] = (time, idx)
+                        # sum_t += (time - n_time)
+                        # sum_channel += (channel - n_channel)
+                        sum_t += n_time
+                        sum_channel += n_channel
+                        sum_idx += 1
 
+            if sum_idx == 0:
+                mean_t = 0
+                mean_channel = 0
+            else:
+                mean_t = sum_t / sum_idx
+                mean_channel = sum_channel / sum_idx
+
+            channel_last_event[int(channel)] = (time, idx)
+            feature.append([mean_t / self.time_window, mean_channel / self.num_channels])
+        
         edges = torch.tensor(edges).t().contiguous()
-        return edges
+        feature = torch.tensor(feature)
+        return edges, feature
 
     # @torch.jit.script
     # def generate_edges(times: torch.Tensor, 

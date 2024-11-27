@@ -16,7 +16,7 @@ class GCN(Module):
         linear_ch = config.model.linear_channels
         num_classes = config.model.num_classes
         
-        self.conv1 = PointNetConv(Sequential(Linear(0+2, conv_ch, bias=False), BatchNorm(conv_ch)))
+        self.conv1 = PointNetConv(Sequential(Linear(2+2, conv_ch, bias=False), BatchNorm(conv_ch)))
         self.conv2 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
         self.conv3 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
         self.conv4 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
@@ -25,7 +25,7 @@ class GCN(Module):
         self.fc2 = Linear(linear_ch, num_classes)
 
     def forward(self, data):
-        x = self.conv1(None, data.pos, data.edge_index)
+        x = self.conv1(data.x, data.pos, data.edge_index)
         x = torch.relu(x)
         x = self.conv2(x, data.pos, data.edge_index)
         x = torch.relu(x)
@@ -37,6 +37,7 @@ class GCN(Module):
         x = global_mean_pool(x, data.batch)
 
         x = self.fc1(x)
+        x = torch.relu(x)
         x = self.fc2(x)
 
         return x
