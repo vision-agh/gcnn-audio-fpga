@@ -21,9 +21,9 @@ module tb_generate_graph;
     
     logic [T_WIDTH+F_WIDTH-1 : 0] mem [DATA_NUM-1 : 0];
     logic empty;
-    output logic            [T_WIDTH-1:0]     t_features;
-    output logic            [F_WIDTH-1:0]     f_features;
-
+    logic            [T_WIDTH-1:0]     t_features;
+    logic            [F_WIDTH-1:0]     f_features;
+    
     integer outfile;
     integer mem_index;
     
