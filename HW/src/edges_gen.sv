@@ -97,8 +97,8 @@ module edges_gen #(
     assign dina = (counter == 0 & !empty) ? {fifo_event.t, 1'b1} : 0;
     assign web  = 1'b0;
 
-    assign f_coord_a = fifo_event.f + counter;
-    assign f_coord_b = fifo_event.f - counter;
+    assign f_coord_a = fifo_event.f + counter*SKIP_STEP;
+    assign f_coord_b = fifo_event.f - counter*SKIP_STEP;
 
     assign condition_a = (f_coord_a >= 0) && (f_coord_a < NUM_CHANNEL);
     assign condition_b = (f_coord_b >= 0) && (f_coord_b < NUM_CHANNEL);
