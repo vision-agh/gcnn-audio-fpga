@@ -26,8 +26,8 @@ module tb_generate_graph;
     integer mem_index;
     
     initial begin
-        outfile = $fopen("/home/360/360.3-Stages/360.3.91-HN280727/final_demo/final_demo.sim/output_results.json", "w");
-        $readmemb("/home/360/360.3-Stages/360.3.91-HN280727/final_demo/final_demo.sim/hw_input.mem", mem);
+        outfile = $fopen("/home/360/360.3-Stages/360.3.91-HN280727/gcn_audio/gcn_audio.sim/output_results.json", "w");
+        $readmemb("/home/360/360.3-Stages/360.3.91-HN280727/gcn_audio/gcn_audio.sim/hw_input.mem", mem);
 
         // Write the beginning of the JSON array
         $fwrite(outfile, "[\n");
