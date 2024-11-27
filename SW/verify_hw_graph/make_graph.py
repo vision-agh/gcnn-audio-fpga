@@ -11,6 +11,7 @@ from scipy.spatial.distance import pdist, squareform
 
 NUM_CHANNELS = 700
 warnings.filterwarnings("ignore")
+SKIP_CHANNELS = 10
 
 parser = ArgumentParser(description="Graph generation for spike data")
 parser.add_argument("--mode", type=str, default="label_shd", help="Mode of operation")
@@ -51,29 +52,9 @@ if (
     
 def create_digraph_from_points(sparse_spikes, time_radius, channel_radius):
     n = len(sparse_spikes)
-    # scale_x = 1 / time_radius
-    # scale_y = 1 / channel_radius
     
     if n == 0:
         return None  
-    
-    # sparse_spikes[:, 1] /= NUM_CHANNELS 
-
-    ####commented out the polyfit part
-    
-    # sparse_spikes = np.hstack((sparse_spikes, np.zeros((sparse_spikes.shape[0], 2))))
-    # condensed_dist_matrix = pdist(sparse_spikes[:, :2] * np.array([scale_x, scale_y]), 'euclidean')
-    # square_dist_matrix = squareform(condensed_dist_matrix)
-    
-    # for i in range(n):
-    #     neighbors = list(np.where(square_dist_matrix[i] < 1)[0])
-    #     try:
-    #         m, _ = np.polyfit(sparse_spikes[neighbors][:, 0], sparse_spikes[neighbors][:, 1], 1)
-    #     except:
-    #         m = 0 
-    #     normal_v = np.array([1, m])
-    #     normal_v = normal_v / np.linalg.norm(normal_v)
-    #     sparse_spikes[i, 2:] = normal_v  
 
     sparse_spikes = sparse_spikes.numpy()
     # Generate edges
@@ -83,18 +64,25 @@ def create_digraph_from_points(sparse_spikes, time_radius, channel_radius):
     for i in range(n):
         event_time = sparse_spikes[i][0]  # Event time
         event_channel = int(sparse_spikes[i][1])  # Event channel (integerized)
+        # Record the current event in channel_last_event
         channel_last_event[event_channel] = (i, event_time)
         
+        # Search for neighboring events using channel_last_event
+        # for neighbor_channel in range(
+        #     max(0, event_channel - channel_radius),
+        #     min(NUM_CHANNELS, event_channel + channel_radius + 1)
+        # ):
         for neighbor_channel in range(
-            max(0, event_channel - channel_radius),
-            min(NUM_CHANNELS, event_channel + channel_radius + 1)
+            max(0, event_channel - channel_radius*SKIP_CHANNELS),
+            min(NUM_CHANNELS, event_channel + channel_radius*SKIP_CHANNELS + 1),
+            10
         ):
             if neighbor_channel != event_channel:
                 if channel_last_event[neighbor_channel] is not None:
                     neighbor_index, neighbor_time = channel_last_event[neighbor_channel]
                     
+                    # Add edge if time condition is satisfied
                     if abs(event_time - neighbor_time) <= time_radius and neighbor_time <= event_time:
-                        # changed the order of the edges 
                         # edges.append((neighbor_index, i))
                         edges.append((i,neighbor_index))
 
