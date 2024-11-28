@@ -7,7 +7,8 @@ from data.augmentations import RandomRemoveNodes, RandomShiftChannel, \
 class SpikingDS(Dataset):
     def __init__(self,
                  files,
-                 config):
+                 config,
+                 train: bool = True):
         
         self.config = config
 
@@ -21,13 +22,15 @@ class SpikingDS(Dataset):
         self.skip_channels = config.graph.skip_channels
 
         self.features = config.graph.features
+        self.train = train
 
         # Augmentations
-        self.random_remove_nodes = RandomRemoveNodes()
-        self.random_shift_time = RandomShiftTime(time_window=self.time_window)
-        self.random_shift_channel = RandomShiftChannel(channels=self.num_channels)
-        self.random_spread_time = RandomSpreadTime(time_window=self.time_window)
-        self.random_spread_channel = RandomSpreadChannel(channels=self.num_channels)
+        if train:
+            self.random_remove_nodes = RandomRemoveNodes()
+            self.random_shift_time = RandomShiftTime(time_window=self.time_window)
+            self.random_shift_channel = RandomShiftChannel(channels=self.num_channels)
+            self.random_spread_time = RandomSpreadTime(time_window=self.time_window)
+            self.random_spread_channel = RandomSpreadChannel(channels=self.num_channels)
 
     def __len__(self) -> int:
         return len(self.files)
@@ -37,11 +40,12 @@ class SpikingDS(Dataset):
         data = torch.load(data_file, weights_only=False)
 
         # TODO: Implement augmentations here
-        data = self.random_remove_nodes(data)
-        data = self.random_shift_time(data)
-        data = self.random_shift_channel(data)
-        data = self.random_spread_time(data)
-        data = self.random_spread_channel(data)
+        if self.train:
+            data = self.random_remove_nodes(data)
+            data = self.random_shift_time(data)
+            data = self.random_shift_channel(data)
+            # data = self.random_spread_time(data)
+            # data = self.random_spread_channel(data)
 
         data.pos[:, 0] = data.pos[:, 0] - data.pos[0, 0] # Start time from 0
         mask = data.pos[:, 0] < self.time_window
