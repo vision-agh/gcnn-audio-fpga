@@ -8,7 +8,7 @@ class SpikingDS(Dataset):
     def __init__(self,
                  files,
                  config,
-                 train: bool = True):
+                 train: bool = False):
         
         self.config = config
 
