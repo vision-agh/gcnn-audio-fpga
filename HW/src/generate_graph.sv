@@ -11,17 +11,17 @@ module generate_graph #(
     input  logic            [F_WIDTH-1: 0]    f,
     input  logic                              is_valid,
     
-    // for debug output of edges_gen
-    output graph_event_type                   event_to_normalize,
-    output graph_edge_type  [MAX_EDGES-1 : 0] edges_to_normalize,
-    output logic            [T_WIDTH-1:0]     t_feature_to_normalize,
-    output logic            [F_WIDTH-1:0]     f_feature_to_normalize,
+    // if you simulate tb_graph_gen use below
+//    output graph_event_type                   event_to_normalize,
+//    output graph_edge_type  [MAX_EDGES-1 : 0] edges_to_normalize,
+//    output logic            [T_WIDTH-1:0]     t_feature_to_normalize,
+//    output logic            [F_WIDTH-1:0]     f_feature_to_normalize,
 
-// if you don't simulate the result comment use below and [here]
-//    output graph_event_type                   out_event,
-//    output graph_edge_type  [MAX_EDGES-1 : 0] out_edges,
-//    output logic            [T_WIDTH-1:0]     t_feature,
-//    output logic            [F_WIDTH-1:0]     f_features,
+// if you don't simulate the result, commentout below and [here]
+    output event_type                         out_event,
+    output edge_type        [MAX_EDGES-1 : 0] out_edges,
+    output logic            [T_WIDTH-1:0]     t_feature,
+    output logic            [F_WIDTH-1:0]     f_feature,
     
     output logic            [N_WIDTH-1:0]     n,
     output logic                              empty
@@ -31,8 +31,8 @@ module generate_graph #(
     graph_edge_type   [MAX_EDGES-1 : 0] edges_to_normalize;
 
 // [here]
-//    logic             [T_WIDTH-1 : 0]   t_feature_to_normalize;
-//    logic             [F_WIDTH-1 : 0]   f_feature_to_normalize;
+    logic             [T_WIDTH-1 : 0]   t_feature_to_normalize;
+    logic             [F_WIDTH-1 : 0]   f_feature_to_normalize;
 
     edges_gen #(
     ) u_edges_gen (
@@ -49,19 +49,19 @@ module generate_graph #(
         .empty         ( empty                  )
     );
     
-// for now path through module
-//    normalize #(
-//    ) u_normalize       (
-//        .clk            ( clk                    ),
-//        .reset          ( reset                  ),
-//        .in_event       ( event_to_normalize     ),
-//        .in_edges       ( edges_to_normalize     ),
-//        .in_t_features  ( t_feature_to_normalize ),
-//        .in_f_features  ( f_feature_to_normalize ),
-//        .out_event      ( out_event              ),
-//        .out_edges      ( out_edges              ),
-//        .out_t_features ( t_features             ),
-//        .out_f_features ( f_features             )
-//    );
+// for now path through module if you test graph_gen module comment out
+    normalize #(
+    ) u_normalize       (
+        .clk            ( clk                    ),
+        .reset          ( reset                  ),
+        .in_event       ( event_to_normalize     ),
+        .in_edges       ( edges_to_normalize     ),
+        .in_t_feature   ( t_feature_to_normalize ),
+        .in_f_feature   ( f_feature_to_normalize ),
+        .out_event      ( out_event              ),
+        .out_edges      ( out_edges              ),
+        .out_t_feature  ( t_feature              ),
+        .out_f_feature  ( f_feature              )
+    );
 
 endmodule
