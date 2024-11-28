@@ -12,6 +12,8 @@ preprocess:
 graph:
   time_radius: 0.02
   channel_radius: 100
+  skip_channels: 10
+  features: local # local, global or None
 
 train:
   batch_size: 16
@@ -24,4 +26,13 @@ model:
   num_classes: 20
   conv_channels: 64
   linear_channels: 64
+
+  use_rnn: False
+  rnn_channels: 64
+  rnn_layers: 1
+  seq_length: 20 
+
+  global_pooling: mean # mean, max or add
+
+
 

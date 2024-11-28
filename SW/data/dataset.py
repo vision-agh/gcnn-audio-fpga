@@ -15,6 +15,9 @@ class SpikingDS(Dataset):
 
         self.time_radius = config.graph.time_radius
         self.channel_radius = config.graph.channel_radius
+        self.skip_channels = config.graph.skip_channels
+
+        self.features = config.graph.features
 
     def __len__(self) -> int:
         return len(self.files)
@@ -29,25 +32,26 @@ class SpikingDS(Dataset):
         mask = data.pos[:, 0] < self.time_window
         data.pos = data.pos[mask] # Cut data to time window
 
-        # TODO: Generate edge_index here
-        data.edge_index, data.x = self.generate_edges(data.pos[:, 0], 
-                                              data.pos[:, 1],
-                                              self.time_radius,
-                                              self.channel_radius)
+        # Generate edge_index
 
-        # TODO: Normalise node positions here
+        if self.features:
+            data.edge_index, data.x = self.generate_edges(data.pos[:, 0], 
+                                                        data.pos[:, 1])
+        else:
+            data.edge_index = self.generate_edges(data.pos[:, 0], 
+                                                  data.pos[:, 1])
+
+        # TODO: Calculate node features here outside the generate_edges function
+        
+        # Normalise node positions
         data.pos[:, 0] = data.pos[:, 0] / self.time_window
         data.pos[:, 1] = data.pos[:, 1] / self.num_channels
-
-        # TODO: Generate node features here
 
         return data
     
     def generate_edges(self, 
                        times: torch.Tensor, 
-                       channels: torch.Tensor, 
-                       time_radius: float = 0.02, 
-                       channel_radius: int = 10):
+                       channels: torch.Tensor):
         edges = []
         feature = []
         
@@ -61,19 +65,24 @@ class SpikingDS(Dataset):
 
             time, channel = time.item(), channel.item()
 
-            for n_channel in range(max(0, int(channel - channel_radius)), 
-                              min(self.num_channels - 1, int(channel + channel_radius + 1)), 10):
+            for n_channel in range(max(0, int(channel - self.channel_radius)), 
+                                   min(self.num_channels - 1, int(channel + self.channel_radius + 1)), 
+                                   self.skip_channels):
                 
                 if channel_last_event[n_channel] is not None:
                     n_time, n_idx = channel_last_event[n_channel]
 
-                    if time - n_time <= time_radius:
+                    if time - n_time <= self.time_radius:
                         edges.append((n_idx, idx))
 
-                        # sum_t += (time - n_time)
-                        # sum_channel += (channel - n_channel)
-                        sum_t += n_time
-                        sum_channel += n_channel
+                        if self.features == 'local':
+                            sum_t += (time - n_time)
+                            sum_channel += (channel - n_channel)
+                        
+                        elif self.features == 'global':
+                            sum_t += n_time
+                            sum_channel += n_channel
+
                         sum_idx += 1
 
             if sum_idx == 0:
@@ -84,49 +93,16 @@ class SpikingDS(Dataset):
                 mean_channel = sum_channel / sum_idx
 
             channel_last_event[int(channel)] = (time, idx)
-            feature.append([mean_t / self.time_window, mean_channel / self.num_channels])
+
+            if self.features == 'local':
+                feature.append([mean_t / self.time_radius, mean_channel / self.channel_radius])
+            elif self.features == 'global':
+                feature.append([mean_t / self.time_window, mean_channel / self.num_channels])
         
         edges = torch.tensor(edges).t().contiguous()
-        feature = torch.tensor(feature)
-        return edges, feature
 
-    # @torch.jit.script
-    # def generate_edges(times: torch.Tensor, 
-    #                    channels: torch.Tensor,
-    #                    num_channels: int,
-    #                    time_radius: float,
-    #                    channel_radius: int) -> torch.Tensor:
-    #     # Calculate the maximum possible number of edges
-    #     max_edges = times.size(0) * (2 * channel_radius + 1)
+        if self.features:
+            feature = torch.tensor(feature)
+            return edges, feature
         
-    #     # Preallocate edges tensor
-    #     edges = torch.full((max_edges, 2), -1, dtype=torch.int32)
-
-    #     # Create tensor to store the last event for each channel
-    #     channel_last_event = torch.full((num_channels, 2), -1, dtype=torch.float32)  # [time, idx]
-    #     edge_count = 0
-
-    #     for idx in range(times.size(0)):
-    #         time = times[idx].item()
-    #         channel = channels[idx].item()
-
-    #         # Determine the range of channels to check
-    #         min_channel = max(0, int(channel - channel_radius))
-    #         max_channel = min(num_channels - 1, int(channel + channel_radius))
-
-    #         # Check for edges within the channel range
-    #         for n_channel in range(min_channel, max_channel + 1):
-    #             n_time = float(channel_last_event[n_channel, 0])
-    #             n_idx = int(channel_last_event[n_channel, 1])
-    #             if n_idx != -1 and time - n_time <= time_radius:
-    #                 edges[edge_count, 0] = int(n_idx)
-    #                 edges[edge_count, 1] = idx
-    #                 edge_count += 1
-
-    #         # Update the last event for the current channel
-    #         channel_last_event[int(channel), 0] = time
-    #         channel_last_event[int(channel), 1] = float(idx)
-
-    #     # Trim unused space in edges tensor
-    #     edges = edges[:edge_count].t().contiguous()
-    #     return edges
+        return edges
