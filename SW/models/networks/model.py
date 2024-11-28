@@ -50,41 +50,46 @@ class GCN(Module):
         x = torch.relu(x)
 
         if self.config.model.use_rnn:
-            seq_len = self.config.model.seq_length
-            pooled_outputs = []
-
-            max_batch = data.batch.max().item() + 1
-
-            # Divide into chunks and apply global mean pooling
-            for i in range(seq_len):
-                mask1 = data.pos[:, 0] >= 1/seq_len * i
-                mask2 = data.pos[:, 0] < 1/seq_len * (i + 1)
-                mask = mask1 & mask2
-
-                mean = torch.zeros((max_batch, x.size(1)), device=x.device)  # Empty chunk fallback
-
-                if mask.sum() > 0:
-                    new_x = x[mask]
-                    batch = data.batch[mask]
-                    out = self.pooling(new_x, batch)  # [batch_size, feature_dim]
-                    batch_idx = torch.unique(batch)
-
-                    for idx in range(batch_idx.max().item() + 1):
-                        mean[idx] = out[idx]
-
-                pooled_outputs.append(mean)
-
-            lstm_input = torch.stack(pooled_outputs, dim=0)
-
-            lstm_out, (h_n, c_n) = self.lstm(lstm_input)  # lstm_out: [seq_len, batch_size, feature_dim]
-
-            x = lstm_out[-1] 
-        
+            x = self.apply_lstm(data)
         else:
             x = self.pooling(x, data.batch)
 
         x = self.fc1(x)
         x = torch.relu(x)
         x = self.fc2(x)
+
+        return x
+    
+    def apply_lstm(self,
+                   data):
+        
+        seq_len = self.config.model.seq_length
+        pooled_outputs = []
+
+        max_batch = data.batch.max().item() + 1
+
+        for i in range(seq_len):
+            mask1 = data.pos[:, 0] >= 1/seq_len * i
+            mask2 = data.pos[:, 0] < 1/seq_len * (i + 1)
+            mask = mask1 & mask2
+
+            mean = torch.zeros((max_batch, x.size(1)), device=x.device)
+
+            if mask.sum() > 0:
+                new_x = x[mask]
+                batch = data.batch[mask]
+                out = self.pooling(new_x, batch)
+                batch_idx = torch.unique(batch)
+
+                for idx in range(batch_idx.max().item() + 1):
+                    mean[idx] = out[idx]
+
+            pooled_outputs.append(mean)
+
+        lstm_input = torch.stack(pooled_outputs, dim=0)
+
+        lstm_out, (h_n, c_n) = self.lstm(lstm_input)
+
+        x = lstm_out[-1] 
 
         return x
