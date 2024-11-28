@@ -7,7 +7,7 @@ package graph_pkg;
     parameter PRECISION          = 8;                    
     parameter string REPO_PATH   = "/home/360/360.3-Stages/360.3.91-HN280727/gcnn-dvs-fpga";     
     
-    parameter T_WIDTH  = 21; //8 + 16 + 1
+    parameter T_WIDTH  = 21; //20+1
     parameter F_WIDTH  = 21;
     
     parameter NUM_CHANNEL = 700;

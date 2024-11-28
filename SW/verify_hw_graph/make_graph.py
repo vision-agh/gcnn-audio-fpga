@@ -64,29 +64,26 @@ def create_digraph_from_points(sparse_spikes, time_radius, channel_radius):
     for i in range(n):
         event_time = sparse_spikes[i][0]  # Event time
         event_channel = int(sparse_spikes[i][1])  # Event channel (integerized)
-        # Record the current event in channel_last_event
         channel_last_event[event_channel] = (i, event_time)
-        
-        # Search for neighboring events using channel_last_event
         # for neighbor_channel in range(
-        #     max(0, event_channel - channel_radius),
-        #     min(NUM_CHANNELS, event_channel + channel_radius + 1)
+        #     max(0, event_channel - channel_radius*SKIP_CHANNELS),
+        #     min(NUM_CHANNELS, event_channel + channel_radius*SKIP_CHANNELS + 1),
+        #     SKIP_CHANNELS
         # ):
         for neighbor_channel in range(
-            max(0, event_channel - channel_radius*SKIP_CHANNELS),
-            min(NUM_CHANNELS, event_channel + channel_radius*SKIP_CHANNELS + 1),
-            10
+            event_channel - channel_radius*SKIP_CHANNELS,
+            event_channel + channel_radius*SKIP_CHANNELS + 1,
+            SKIP_CHANNELS
         ):
+            if neighbor_channel < 0 or neighbor_channel >= NUM_CHANNELS:
+                continue
             if neighbor_channel != event_channel:
                 if channel_last_event[neighbor_channel] is not None:
                     neighbor_index, neighbor_time = channel_last_event[neighbor_channel]
                     
-                    # Add edge if time condition is satisfied
                     if abs(event_time - neighbor_time) <= time_radius and neighbor_time <= event_time:
                         # edges.append((neighbor_index, i))
                         edges.append((i,neighbor_index))
-
-        
 
     # Generate directed graph and set node features
     directed_graph = nx.DiGraph()
