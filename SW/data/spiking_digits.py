@@ -62,7 +62,7 @@ class SpikingDigits(L.LightningDataModule):
             self.val_data = SpikingDS(test_data, self.config)
             print('Using test data as validation data')
 
-        self.train_data = SpikingDS(train_data, self.config)
+        self.train_data = SpikingDS(train_data, self.config, train=True)
         self.test_data = SpikingDS(test_data, self.config)
 
     def train_dataloader(self):
