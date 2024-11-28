@@ -1,6 +1,9 @@
 import torch
 from torch.utils.data import Dataset
 
+from data.augmentations import RandomRemoveNodes, RandomShiftChannel, \
+    RandomShiftTime, RandomSpreadChannel, RandomSpreadTime
+
 class SpikingDS(Dataset):
     def __init__(self,
                  files,
@@ -19,6 +22,13 @@ class SpikingDS(Dataset):
 
         self.features = config.graph.features
 
+        # Augmentations
+        self.random_remove_nodes = RandomRemoveNodes()
+        self.random_shift_time = RandomShiftTime(time_window=self.time_window)
+        self.random_shift_channel = RandomShiftChannel(channels=self.num_channels)
+        self.random_spread_time = RandomSpreadTime(time_window=self.time_window)
+        self.random_spread_channel = RandomSpreadChannel(channels=self.num_channels)
+
     def __len__(self) -> int:
         return len(self.files)
     
@@ -27,6 +37,11 @@ class SpikingDS(Dataset):
         data = torch.load(data_file, weights_only=False)
 
         # TODO: Implement augmentations here
+        data = self.random_remove_nodes(data)
+        data = self.random_shift_time(data)
+        data = self.random_shift_channel(data)
+        data = self.random_spread_time(data)
+        data = self.random_spread_channel(data)
 
         data.pos[:, 0] = data.pos[:, 0] - data.pos[0, 0] # Start time from 0
         mask = data.pos[:, 0] < self.time_window
