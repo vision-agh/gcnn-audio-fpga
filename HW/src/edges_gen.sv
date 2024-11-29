@@ -4,8 +4,8 @@ import graph_pkg::*;
 
 module edges_gen #(
     parameter int AWIDTH      = $clog2(NUM_CHANNEL), 
-    parameter int DWIDTH      = T_WIDTH + 1,
-    parameter int FIFO_WIDTH  = T_WIDTH + F_WIDTH + 1  
+    parameter int DWIDTH      = T_WIDTH + 1,          // t + valid
+    parameter int FIFO_WIDTH  = T_WIDTH + F_WIDTH + 1 // t + f + valid
 )(
     input  logic                              clk,
     input  logic                              reset,
@@ -19,11 +19,23 @@ module edges_gen #(
     output logic            [T_WIDTH-1:0]     t_feature,
     output logic            [F_WIDTH-1:0]     f_feature
 );
+    
+    // count number of events
+    always @(posedge clk) begin
+        if (reset) begin
+            n <= 0;
+        end else if (is_valid) begin
+            n <= n + 1;
+        end
+    end
 
-    logic                              wen, fifo_read, full;
-    logic [FIFO_WIDTH-1:0]             din, dout;
-    logic [$clog2(MEMORY_OPS_NUM)-1:0] counter, counter_reg;
-
+    // fifo
+    logic                   wen, fifo_read, full;
+    logic  [FIFO_WIDTH-1:0] din, dout;
+    
+    assign din = {t, f, is_valid};  
+    assign wen = is_valid;   
+           
     fifo_wrapper_0 fifo_0 (
         .rst_0    ( reset     ),
         .wr_clk_0 ( clk       ),
@@ -34,20 +46,10 @@ module edges_gen #(
         .dout     ( dout      ),
         .empty    ( empty     )
     );
-
-    assign din = {t, f, is_valid};
-    assign wen = is_valid;
-
-    graph_event_type fifo_event, fifo_event_reg;
-
-    always @(posedge clk) begin
-        if (reset) begin
-            n <= 0;
-        end else if (is_valid) begin
-            n <= n + 1;
-        end
-    end
-
+    
+    logic [$clog2(MEMORY_OPS_NUM)-1:0] counter, counter_reg;
+    graph_event_type fifo_event, fifo_event_reg; // fifo output
+    
     assign fifo_read = !empty && counter == MEMORY_OPS_NUM-1;
 
     // FIFO output parsing
@@ -185,26 +187,26 @@ module edges_gen #(
     );
 
     delay_module #(
-        .N (AWIDTH*2),
-        .DELAY (1)
+        .N     ( AWIDTH*2 ),
+        .DELAY ( 1        )
     ) delay_f_coord (
-        .clk ( clk ),
-        .idata ( {f_coord_a,f_coord_b}         ),
+        .clk   ( clk                           ),
+        .idata ( {f_coord_a,    f_coord_b    } ),
         .odata ( {f_coord_a_reg,f_coord_b_reg} )
     );
     
     delay_module #(
-        .N        ( F_WIDTH + T_WIDTH+1   ),
-        .DELAY    ( 1 ) 
+        .N     ( F_WIDTH + T_WIDTH+1 ),
+        .DELAY ( 1 ) 
     ) delay_fifo_event (
-        .clk   ( clk            ),
-        .idata ( {fifo_event.t,     fifo_event.f,     fifo_event.valid}     ),
+        .clk   ( clk                                                        ),
+        .idata ( {fifo_event.t,     fifo_event.f,     fifo_event.valid    } ),
         .odata ( {fifo_event_reg.t, fifo_event_reg.f, fifo_event_reg.valid} )
     );
     
     delay_module #(
-        .N        ( $clog2(MEMORY_OPS_NUM)   ),
-        .DELAY    ( 2 ) 
+        .N     ( $clog2(MEMORY_OPS_NUM) ),
+        .DELAY ( 2                      )       
     ) delay_counter (
         .clk   ( clk         ),
         .idata ( counter     ),
@@ -212,8 +214,8 @@ module edges_gen #(
     );
     
     delay_module #(
-        .N (1),
-        .DELAY (14)
+        .N     ( 1                ),
+        .DELAY ( MEMORY_OPS_NUM+3 )
     ) delay_fifo_read (
         .clk   ( clk             ),
         .idata ( fifo_read       ),
@@ -221,12 +223,12 @@ module edges_gen #(
     );
 
     delay_module #(
-        .N        ( F_WIDTH + T_WIDTH   ),
-        .DELAY    ( 3 ) 
+        .N     ( F_WIDTH + T_WIDTH   ),
+        .DELAY ( 3 ) 
     ) delay_event (
-        .clk   ( clk            ),
+        .clk   ( clk                           ),
         .idata ( {fifo_event.t,  fifo_event.f} ),
-        .odata ( {out_event.t,   out_event.f} )
+        .odata ( {out_event.t,   out_event.f } )
     );
 
     // Output edges generation

@@ -1,11 +1,10 @@
 package graph_pkg;
 
 
-    parameter F_RADIUS           = 10;                    
+    parameter F_RADIUS           = 10; //Search radius will be F_RADIUS*SKIPSTEPS                    
     parameter T_RADIUS           = 20972;                 
     parameter MAX_EDGES          = F_RADIUS*2;         
     parameter PRECISION          = 8;                    
-    parameter string REPO_PATH   = "/home/360/360.3-Stages/360.3.91-HN280727/gcnn-dvs-fpga";     
     
     parameter T_WIDTH  = 21; //20+1
     parameter F_WIDTH  = 21;
