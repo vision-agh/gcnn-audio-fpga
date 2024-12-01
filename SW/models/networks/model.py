@@ -6,12 +6,8 @@ from torch.nn import Module, ModuleList, Linear, Dropout, Sequential
 
 
 from models.networks.layers.my_pointnet import MyPointNetConv
+from models.networks.layers.my_pooling import MyGlobalPooling
 
-Pooling = {
-    'mean': global_mean_pool,
-    'add': global_add_pool,
-    'max': global_max_pool
-}
 
 class GCN(Module):
     def __init__(self, 
@@ -26,10 +22,10 @@ class GCN(Module):
 
         input_dim = 2+2 if config.graph.features else 2
         
-        self.conv1 = MyPointNetConv(input_dim, conv_ch, bias=False, num_bits=12, first_layer=True)
-        self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
-        self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
-        self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv1 = MyPointNetConv(input_dim, conv_ch, bias=False, num_bits=16, first_layer=True)
+        self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
+        self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
+        self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
 
         if config.model.use_rnn:
             self.lstm = torch.nn.LSTM(config.rnn_channels, 
@@ -39,7 +35,7 @@ class GCN(Module):
         self.fc1 = Linear(conv_ch, linear_ch)
         self.fc2 = Linear(linear_ch, num_classes)
 
-        self.pooling = Pooling[config.model.global_pooling]
+        self.pooling = MyGlobalPooling(config.model.global_pooling)
 
     def forward(self, data):
         data.x = self.conv1(data)
@@ -47,13 +43,10 @@ class GCN(Module):
         data.x = self.conv3(data)
         data.x = self.conv4(data)
 
-        print(self.conv1.observer_input.scale)
-        print(self.conv1.observer_input.zero_point)
-
         if self.config.model.use_rnn:
             x = self.apply_lstm(data)
         else:
-            x = self.pooling(data.x, data.batch)
+            x = self.pooling(data, self.conv4.observer_output)
 
         x = self.fc1(x)
         x = torch.relu(x)
@@ -66,6 +59,7 @@ class GCN(Module):
         self.conv2.calibrate()
         self.conv3.calibrate()
         self.conv4.calibrate()
+        self.pooling.calibrate()
     
     def apply_lstm(self,
                    data):
