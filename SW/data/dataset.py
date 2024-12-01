@@ -40,10 +40,10 @@ class SpikingDS(Dataset):
         data = torch.load(data_file, weights_only=False)
 
         # TODO: Implement augmentations here
-        if self.train:
-            data = self.random_remove_nodes(data)
-            data = self.random_shift_time(data)
-            data = self.random_shift_channel(data)
+        # if self.train:
+        #     data = self.random_remove_nodes(data)
+        #     data = self.random_shift_time(data)
+        #     data = self.random_shift_channel(data)
             # data = self.random_spread_time(data)
             # data = self.random_spread_channel(data)
 

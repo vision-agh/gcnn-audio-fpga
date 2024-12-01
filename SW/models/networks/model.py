@@ -5,6 +5,8 @@ from torch_geometric.nn import GCNConv, PointNetConv, GATConv, GATv2Conv, GINCon
 from torch.nn import Module, ModuleList, Linear, Dropout, Sequential
 
 
+from models.networks.layers.my_pointnet import MyPointNetConv
+
 Pooling = {
     'mean': global_mean_pool,
     'add': global_add_pool,
@@ -24,10 +26,10 @@ class GCN(Module):
 
         input_dim = 2+2 if config.graph.features else 2
         
-        self.conv1 = PointNetConv(Sequential(Linear(input_dim, conv_ch, bias=False), BatchNorm(conv_ch)))
-        self.conv2 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
-        self.conv3 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
-        self.conv4 = PointNetConv(Sequential(Linear(conv_ch+2, conv_ch, bias=False), BatchNorm(conv_ch)))
+        self.conv1 = MyPointNetConv(input_dim, conv_ch, bias=False, num_bits=12, first_layer=True)
+        self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
 
         if config.model.use_rnn:
             self.lstm = torch.nn.LSTM(config.rnn_channels, 
@@ -40,25 +42,30 @@ class GCN(Module):
         self.pooling = Pooling[config.model.global_pooling]
 
     def forward(self, data):
-        x = self.conv1(data.x, data.pos, data.edge_index)
-        x = torch.relu(x)
-        x = self.conv2(x, data.pos, data.edge_index)
-        x = torch.relu(x)
-        x = self.conv3(x, data.pos, data.edge_index)
-        x = torch.relu(x)
-        x = self.conv4(x, data.pos, data.edge_index)
-        x = torch.relu(x)
+        data.x = self.conv1(data)
+        data.x = self.conv2(data)
+        data.x = self.conv3(data)
+        data.x = self.conv4(data)
+
+        print(self.conv1.observer_input.scale)
+        print(self.conv1.observer_input.zero_point)
 
         if self.config.model.use_rnn:
             x = self.apply_lstm(data)
         else:
-            x = self.pooling(x, data.batch)
+            x = self.pooling(data.x, data.batch)
 
         x = self.fc1(x)
         x = torch.relu(x)
         x = self.fc2(x)
 
         return x
+    
+    def calibrate(self):
+        self.conv1.calibrate()
+        self.conv2.calibrate()
+        self.conv3.calibrate()
+        self.conv4.calibrate()
     
     def apply_lstm(self,
                    data):

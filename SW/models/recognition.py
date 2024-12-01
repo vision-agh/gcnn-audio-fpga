@@ -75,3 +75,8 @@ class LNRecognition(L.LightningModule):
 
         self.log('test_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
         self.log('test_acc', accuracy, on_epoch=True, logger=True, batch_size=self.batch_size)
+
+    def on_validation_epoch_end(self):
+        if self.current_epoch == 0:
+            print('calibrating')
+            self.model.calibrate()

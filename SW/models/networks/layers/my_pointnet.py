@@ -38,7 +38,7 @@ class MyPointNetConv(MessagePassing):
         self.first_layer = first_layer
 
         # Define layers
-        self.linear = Linear(input_dim + 2, output_dim, bias=bias)
+        self.linear = Linear(input_dim, output_dim, bias=bias)
         self.norm = BatchNorm1d(output_dim)
         self.mlp = Sequential(self.linear, self.norm)
 
@@ -136,7 +136,8 @@ class MyPointNetConv(MessagePassing):
             msg = torch.cat([x_j, msg], dim=1)
 
         # Update input observer
-        self.observer_input.update(msg)
+        if self.training:
+            self.observer_input.update(msg)
         msg = FakeQuantize.apply(msg, self.observer_input)
 
         # Simulate batch normalization during calibration
@@ -151,7 +152,8 @@ class MyPointNetConv(MessagePassing):
         weight, bias = self.merge_norm(mean, std)
 
         # Update weight observer
-        self.observer_weight.update(weight)
+        if self.training:
+            self.observer_weight.update(weight)
 
         # Apply quantized weights
         if self.local_nn is not None:
@@ -159,8 +161,9 @@ class MyPointNetConv(MessagePassing):
             msg = F.linear(msg, weight_q, bias)
 
         # Update output observer
-        self.observer_output.update(msg)
-        self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
+        if self.training:
+            self.observer_output.update(msg)
+            self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
         msg = FakeQuantize.apply(msg, self.observer_output)
         return msg
     
