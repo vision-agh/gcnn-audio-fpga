@@ -63,7 +63,7 @@ module tb_generate_graph;
         @(posedge clk);
         is_valid = 0;
 
-        #1400000;
+        #1600000;
         $finish;
     end
 
