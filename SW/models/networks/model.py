@@ -26,6 +26,8 @@ class GCN(Module):
         self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
         self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
         self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
+        
+        self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=16)
 
         if config.model.use_rnn:
             self.lstm = torch.nn.LSTM(config.rnn_channels, 
@@ -35,7 +37,6 @@ class GCN(Module):
         self.fc1 = Linear(conv_ch, linear_ch)
         self.fc2 = Linear(linear_ch, num_classes)
 
-        self.pooling = MyGlobalPooling(config.model.global_pooling)
 
     def forward(self, data):
         data.x = self.conv1(data)
@@ -60,6 +61,13 @@ class GCN(Module):
         self.conv3.calibrate()
         self.conv4.calibrate()
         self.pooling.calibrate()
+
+    def freeze(self):
+        self.conv1.freeze()
+        self.conv2.freeze(observer_input=self.conv1.observer_output)
+        self.conv3.freeze(observer_input=self.conv2.observer_output)
+        self.conv4.freeze(observer_input=self.conv3.observer_output)
+        self.pooling.freeze()
     
     def apply_lstm(self,
                    data):
