@@ -25,6 +25,7 @@ class MyGlobalPooling(nn.Module):
         self.aggregator = Pooling[aggregator]
         self.calib_mode = False
         self.freeze_mode = False
+        self.num_bits = num_bits
 
     def forward(
         self,
@@ -38,7 +39,7 @@ class MyGlobalPooling(nn.Module):
             out = self.aggregator(data.x, data.batch)
             out = FakeQuantize.apply(out, observer)
         elif self.freeze_mode is True:
-            out = self.aggregator(observer.quantize_tensor(data.x), data.batch)
+            out = self.aggregator(data.x, data.batch)
             out = torch.clamp(out, 0, 2**self.num_bits-1)
             out = out.round()
             out = observer.dequantize_tensor(out)

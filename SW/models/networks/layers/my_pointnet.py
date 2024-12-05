@@ -124,6 +124,10 @@ class MyPointNetConv(MessagePassing):
 
     def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
+        msg[:, 1] += 1/7
+        msg[:, 1] *= 7/2
+        msg[:, 0] *= (-50)
+
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
         if self.local_nn is not None:
@@ -132,6 +136,9 @@ class MyPointNetConv(MessagePassing):
 
     def message_calib(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
+        msg[:, 0] *= (-50)
+        msg[:, 1] += 1/7
+        msg[:, 1] *= 7/2
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
 
@@ -169,13 +176,15 @@ class MyPointNetConv(MessagePassing):
     
     def message_quant(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
+        msg[:, 0] *= (-50)
+        msg[:, 1] += 1/7
+        msg[:, 1] *= 7/2
 
         # Quantize input message, if first layer we need to quantize both x_j and pos differences
         # If not first layer, we quantize only the pos differences and concatenate with x_j
         if self.first_layer:
             msg = torch.cat([x_j, msg], dim=1)
             msg = self.observer_input.quantize_tensor(msg)
-
         else:
             msg = self.observer_input.quantize_tensor(msg)
             msg = torch.cat([x_j, msg], dim=1)
@@ -259,7 +268,7 @@ class MyPointNetConv(MessagePassing):
 
         with torch.no_grad():
             # Initialize quantized linear layer
-            self.qlinear = Linear(self.input_dim + 3, self.output_dim, bias=True)
+            self.qlinear = Linear(self.input_dim, self.output_dim, bias=True)
 
             # Quantize weights
             quantized_weight = self.observer_weight.quantize_tensor(weight)

@@ -37,9 +37,9 @@ class LNRecognition(L.LightningModule):
                                      weight_decay=self.weight_decay)
 
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
-        return {'optimizer': optimizer, 
-                'lr_scheduler': lr_scheduler}
-        # return optimizer
+        # return {'optimizer': optimizer, 
+        #         'lr_scheduler': lr_scheduler}
+        return optimizer
 
     def forward(self, data):
         return self.model(data)
@@ -68,13 +68,13 @@ class LNRecognition(L.LightningModule):
 
     def test_step(self, batch, batch_idx):
         outputs = self.forward(data=batch)
-        loss = self.criterion(outputs, target=torch.tensor(batch['y']).long().to('cuda'))
-
+        loss = self.criterion(outputs, target=batch['y'])
         y_prediction = torch.argmax(outputs, dim=-1)
-        accuracy = self.accuracy(preds=y_prediction.cpu().unsqueeze(0), target=torch.tensor([batch['y']]))
+        
+        acc = accuracy(preds=y_prediction, target=batch['y'], task="multiclass", num_classes=self.num_classes)
 
         self.log('test_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
-        self.log('test_acc', accuracy, on_epoch=True, logger=True, batch_size=self.batch_size)
+        self.log('test_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size)
 
     def on_validation_epoch_end(self):
         if self.current_epoch == 0:
