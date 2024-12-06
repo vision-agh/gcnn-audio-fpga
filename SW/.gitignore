@@ -3,6 +3,7 @@
 /wandb/
 /audio_event/
 /checkpoints/
+/lightning_logs/
 model.pth
 
 # Byte-compiled / optimized / DLL files

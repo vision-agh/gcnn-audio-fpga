@@ -37,6 +37,9 @@ class MyPointNetConv(MessagePassing):
         self.bias = bias
         self.first_layer = first_layer
 
+
+        self.num_bits_obs = 32 
+
         # Define layers
         self.linear = Linear(input_dim, output_dim, bias=bias)
         self.norm = BatchNorm1d(output_dim)
@@ -59,14 +62,13 @@ class MyPointNetConv(MessagePassing):
         self.observer_output = Observer(num_bits=num_bits)
 
         # Register buffers for quantization parameters
-        self.register_buffer('m', torch.tensor([-1], requires_grad=False))
-        self.register_buffer('qscale_in', torch.tensor([-1], requires_grad=False))
-        self.register_buffer('qscale_w', torch.tensor([-1], requires_grad=False))
-        self.register_buffer('qscale_out', torch.tensor([-1], requires_grad=False))
-        self.register_buffer('qscale_m', torch.tensor([-1], requires_grad=False))
-        self.register_buffer('num_bits_model', torch.tensor([num_bits], requires_grad=False))
-        self.register_buffer('num_bits_scale', torch.tensor([-1], requires_grad=False))
-
+        self.register_buffer('m', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('qscale_in', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('qscale_w', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('qscale_out', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('qscale_m', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('num_bits_model', torch.tensor(num_bits, requires_grad=False))
+        self.register_buffer('num_bits_scale', torch.tensor(self.num_bits_obs, requires_grad=False))
 
     def reset_parameters(self):
         super().reset_parameters()
@@ -113,20 +115,20 @@ class MyPointNetConv(MessagePassing):
         return out
 
     def message(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
-        if self.calib_mode is False:
+        if self.calib_mode is False and self.freeze_mode is False:
             return self.message_float(x_i, x_j, pos_i, pos_j)
         elif self.calib_mode is True and self.freeze_mode is False:
             return self.message_calib(x_i, x_j, pos_i, pos_j)
-        elif self.calib_mode is True and self.freeze_mode is True:
+        elif self.freeze_mode is True:
             return self.message_quant(x_i, x_j, pos_i, pos_j)
         else:
             raise ValueError('Invalid mode')
 
     def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
+        msg[:, 0] *= (-50)
         msg[:, 1] += 1/7
         msg[:, 1] *= 7/2
-        msg[:, 0] *= (-50)
 
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
@@ -139,6 +141,7 @@ class MyPointNetConv(MessagePassing):
         msg[:, 0] *= (-50)
         msg[:, 1] += 1/7
         msg[:, 1] *= 7/2
+
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
 
@@ -185,6 +188,7 @@ class MyPointNetConv(MessagePassing):
         if self.first_layer:
             msg = torch.cat([x_j, msg], dim=1)
             msg = self.observer_input.quantize_tensor(msg)
+
         else:
             msg = self.observer_input.quantize_tensor(msg)
             msg = torch.cat([x_j, msg], dim=1)
@@ -234,33 +238,30 @@ class MyPointNetConv(MessagePassing):
         '''Freeze model - quantize weights/bias and calculate scales'''
 
         self.freeze_mode = True
-        num_bits_obs = 32
 
         if observer_input is not None:
             self.observer_input = observer_input
         if observer_output is not None:
             self.observer_output = observer_output
 
-        self.num_bits_scale = torch.tensor([num_bits_obs], requires_grad=False)
-
         # Quantize scales for input, weight, and output
-        self.qscale_in = (2 ** num_bits_obs - 1) * self.observer_input.scale
+        self.qscale_in = (2 ** self.num_bits_obs - 1) * self.observer_input.scale
         self.qscale_in = self.qscale_in.round()
-        self.observer_input.scale = self.qscale_in / (2 ** num_bits_obs - 1)
+        self.observer_input.scale = self.qscale_in / (2 ** self.num_bits_obs - 1)
 
-        self.qscale_w = (2 ** num_bits_obs - 1) * self.observer_weight.scale
+        self.qscale_w = (2 ** self.num_bits_obs - 1) * self.observer_weight.scale
         self.qscale_w = self.qscale_w.round()
-        self.observer_weight.scale = self.qscale_w / (2 ** num_bits_obs - 1)
+        self.observer_weight.scale = self.qscale_w / (2 ** self.num_bits_obs - 1)
 
-        self.qscale_out = (2 ** num_bits_obs - 1) * self.observer_output.scale
+        self.qscale_out = (2 ** self.num_bits_obs - 1) * self.observer_output.scale
         self.qscale_out = self.qscale_out.round()
-        self.observer_output.scale = self.qscale_out / (2 ** num_bits_obs - 1)
+        self.observer_output.scale = self.qscale_out / (2 ** self.num_bits_obs - 1)
 
         # Compute scaling factor m
         m = (self.observer_weight.scale * self.observer_input.scale) / self.observer_output.scale
-        m_scaled = m * (2 ** num_bits_obs - 1)
+        m_scaled = m * (2 ** self.num_bits_obs - 1)
         self.qscale_m = m_scaled.round()
-        self.m = self.qscale_m / (2 ** num_bits_obs - 1)
+        self.m = self.qscale_m / (2 ** self.num_bits_obs - 1)
 
         # Merge batch normalization parameters
         std = torch.sqrt(self.norm.running_var + self.norm.eps)

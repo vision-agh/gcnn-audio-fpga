@@ -33,7 +33,7 @@ class MyGlobalPooling(nn.Module):
         observer: Observer
     ) -> Tensor:
         
-        if self.calib_mode is False:
+        if self.calib_mode is False and self.freeze_mode is False:
             out = self.aggregator(data.x, data.batch)
         elif self.calib_mode is True and self.freeze_mode is False:
             out = self.aggregator(data.x, data.batch)

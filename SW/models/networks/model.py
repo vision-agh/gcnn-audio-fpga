@@ -40,6 +40,16 @@ class GCN(Module):
 
     def forward(self, data):
         data.x = self.conv1(data)
+        
+        import numpy as np
+        with open('conv1_output.txt', 'w') as f:
+            for x in data.x:
+                to_save = x.detach().cpu().numpy()
+                to_save = np.flip(to_save)
+                for elem in to_save:
+                    f.write(str(int(elem)) + ' ')
+                f.write('\n')
+
         data.x = self.conv2(data)
         data.x = self.conv3(data)
         data.x = self.conv4(data)

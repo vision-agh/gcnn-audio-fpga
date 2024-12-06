@@ -42,27 +42,22 @@ class Observer(nn.Module):
         self.num_bits = num_bits
 
         '''Initialize parameters for quantization'''
-        scale = torch.tensor([], requires_grad=False)
-        zero_point = torch.tensor([], requires_grad=False)
-        min = torch.tensor([], requires_grad=False)
-        max = torch.tensor([], requires_grad=False)
-        self.register_buffer('scale', scale)
-        self.register_buffer('zero_point', zero_point)
-        self.register_buffer('min', min)
-        self.register_buffer('max', max)
+        self.register_buffer('scale', torch.tensor(0.0, requires_grad=False))
+        self.register_buffer('zero_point', torch.tensor(0.0, requires_grad=False))
+        self.register_buffer('min', torch.tensor(float('inf'), requires_grad=False))
+        self.register_buffer('max', torch.tensor(float('-inf'), requires_grad=False))
 
     def update(self, tensor: torch.Tensor):
         
         '''Update parameters for quantization'''
-        if self.max.nelement() == 0 or self.max < tensor.max():
-            self.max = tensor.max()
-        self.max.clamp_(min=0)
+        with torch.no_grad():
+            tensor_min = torch.min(tensor).item()
+            tensor_max = torch.max(tensor).item()
+            self.min = torch.tensor(min(self.min.item(), tensor_min), device=tensor.device)
+            self.max = torch.tensor(max(self.max.item(), tensor_max), device=tensor.device)
 
-        if self.min.nelement() == 0 or self.min > tensor.min():
-            self.min = tensor.min()
-        self.min.clamp_(max=0)
-
-        self.scale, self.zero_point = self.calcScaleZeroPoint()
+            if self.max > self.min:
+                self.scale, self.zero_point = self.calcScaleZeroPoint()
 
     def quantize_tensor(self, tensor: torch.Tensor):
         
@@ -79,16 +74,11 @@ class Observer(nn.Module):
         '''Calculate scale and zero point for quantization'''
         qmin = 0.
         qmax = 2. ** self.num_bits - 1.
+
         scale = (self.max - self.min) / (qmax - qmin)
-
         zero_point = qmax - self.max / scale
+        zero_point = zero_point.clamp(qmin, qmax).round()
 
-        if zero_point < qmin:
-            zero_point = torch.tensor([qmin], dtype=torch.float32).to(self.min.device)
-        elif zero_point > qmax:
-            zero_point = torch.tensor([qmax], dtype=torch.float32).to(self.max.device)
-        
-        zero_point = zero_point.round()
         return scale, zero_point
     
 
