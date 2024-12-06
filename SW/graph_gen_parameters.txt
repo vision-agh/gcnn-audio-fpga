@@ -1,0 +1,11 @@
+Graph Gen:
+
+Original precision: 	32
+Original scale: 	65537
+
+
+New precision: 	16
+Scale average time: 	4295
+Scale average idx: 	6135480
+Scale diff time: 	214742		(assume diff time is positive from (-20000, 0) -> (0, 20000))
+Scale diff idx:	21474181	(assume we add 100 to diff idx first from (-100, 100) -> (0, 200))

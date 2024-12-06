@@ -48,6 +48,7 @@ class SpikingDS(Dataset):
             # data = self.random_spread_channel(data)
 
         data.pos[:, 0] = data.pos[:, 0] - data.pos[0, 0] # Start time from 0
+        data.pos[:,0] = torch.round(data.pos[:, 0], decimals=6)
         mask = data.pos[:, 0] < self.time_window
         data.pos = data.pos[mask] # Cut data to time window
 
