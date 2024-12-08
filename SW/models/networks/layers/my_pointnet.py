@@ -37,7 +37,7 @@ class MyPointNetConv(MessagePassing):
         self.bias = bias
         self.first_layer = first_layer
 
-
+        # Number of bits for quantization scales
         self.num_bits_obs = 32 
 
         # Define layers
@@ -52,9 +52,9 @@ class MyPointNetConv(MessagePassing):
 
         self.reset_parameters()
 
-        # Modes for calibration and freezing
-        self.calib_mode = False
-        self.freeze_mode = False
+        # Modes for calibration and quantization
+        self.register_buffer('calib_mode', torch.tensor(False, requires_grad=False))
+        self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
 
         # Initialize quantization observers
         self.observer_input = Observer(num_bits=num_bits)
@@ -80,6 +80,10 @@ class MyPointNetConv(MessagePassing):
         data: Data,
     ) -> Tensor:
         
+        '''
+            Standard forward method of a PointNetConv layer
+        '''
+
         x = data.x
         pos = data.pos
         edge_index = data.edge_index
@@ -106,29 +110,40 @@ class MyPointNetConv(MessagePassing):
         
         # Apply activation function
         if self.use_relu:
-            if self.freeze_mode is False:
+            if self.calib_mode and not self.quantize_mode:
                 out = F.relu(out)
             else:
-                # In freeze mode, simulate quantized ReLU
+                # In quantize mode, simulate quantized ReLU
                 out[out < self.observer_output.zero_point] = self.observer_output.zero_point
 
         return out
 
     def message(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
-        if self.calib_mode is False and self.freeze_mode is False:
-            return self.message_float(x_i, x_j, pos_i, pos_j)
-        elif self.calib_mode is True and self.freeze_mode is False:
+        '''
+            Custom message function for PointNetConv.
+            We select the message function based on the current mode (calibration, quantize, or float)
+        '''
+        if self.calib_mode and not self.quantize_mode:
             return self.message_calib(x_i, x_j, pos_i, pos_j)
-        elif self.freeze_mode is True:
+        elif self.quantize_mode:
             return self.message_quant(x_i, x_j, pos_i, pos_j)
+        elif not self.calib_mode and not self.quantize_mode:
+            return self.message_float(x_i, x_j, pos_i, pos_j)
         else:
             raise ValueError('Invalid mode')
+        
+    def normalize_pos_diff(self, pos_diff: Tensor) -> Tensor:
+        '''
+            Normalize the positional differences between two nodes
+        '''
+        pos_diff[:, 0] *= (-50)
+        pos_diff[:, 1] += 1/7
+        pos_diff[:, 1] *= 7/2
+        return pos_diff
 
     def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
-        msg[:, 0] *= (-50)
-        msg[:, 1] += 1/7
-        msg[:, 1] *= 7/2
+        msg = self.normalize_pos_diff(msg)
 
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
@@ -138,16 +153,14 @@ class MyPointNetConv(MessagePassing):
 
     def message_calib(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
-        msg[:, 0] *= (-50)
-        msg[:, 1] += 1/7
-        msg[:, 1] *= 7/2
+        msg = self.normalize_pos_diff(msg)
 
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
 
         # Update input observer
-        if self.training:
-            self.observer_input.update(msg)
+        # if self.training:
+        self.observer_input.update(msg)
         msg = FakeQuantize.apply(msg, self.observer_input)
 
         # Simulate batch normalization during calibration
@@ -162,8 +175,8 @@ class MyPointNetConv(MessagePassing):
         weight, bias = self.merge_norm(mean, std)
 
         # Update weight observer
-        if self.training:
-            self.observer_weight.update(weight)
+        # if self.training:
+        self.observer_weight.update(weight)
 
         # Apply quantized weights
         if self.local_nn is not None:
@@ -171,20 +184,21 @@ class MyPointNetConv(MessagePassing):
             msg = F.linear(msg, weight_q, bias)
 
         # Update output observer
-        if self.training:
-            self.observer_output.update(msg)
-            self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
+        # if self.training:
+        self.observer_output.update(msg)
+        self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
         msg = FakeQuantize.apply(msg, self.observer_output)
         return msg
     
     def message_quant(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
-        msg[:, 0] *= (-50)
-        msg[:, 1] += 1/7
-        msg[:, 1] *= 7/2
+        msg = self.normalize_pos_diff(msg)
 
-        # Quantize input message, if first layer we need to quantize both x_j and pos differences
-        # If not first layer, we quantize only the pos differences and concatenate with x_j
+        '''
+            Quantize input message, if first layer we need to quantize both x_j and pos differences
+            If not first layer, we quantize only the pos differences and concatenate with x_j
+        '''
+        
         if self.first_layer:
             msg = torch.cat([x_j, msg], dim=1)
             msg = self.observer_input.quantize_tensor(msg)
@@ -205,12 +219,18 @@ class MyPointNetConv(MessagePassing):
         # Clamp output message
         msg = torch.clamp(msg, 0, 2**self.num_bits-1)
         msg = msg.round()
+
+        deq = self.observer_output.dequantize_tensor(msg)
         return msg
 
     def merge_norm(self,
                    mean: torch.Tensor,
                    std: torch.Tensor):
-        """Scalenie normalizacji batch z warstwą liniową."""
+        
+        '''
+            Merge batch normalization parameters with linear weights.
+        '''
+
         if self.norm.affine:
             gamma = self.norm.weight
             beta = self.norm.bias
@@ -229,15 +249,17 @@ class MyPointNetConv(MessagePassing):
         return W_new, b_new
     
     def calibrate(self):
-        self.calib_mode = True
+        self.calib_mode.fill_(True)
 
-    def freeze(self,
+    def quantize(self,
                observer_input: Observer = None,
                observer_output: Observer = None):
         
-        '''Freeze model - quantize weights/bias and calculate scales'''
+        '''
+            Quantize model - quantize weights/bias and calculate scales
+        '''
 
-        self.freeze_mode = True
+        self.quantize_mode.fill_(True)
 
         if observer_input is not None:
             self.observer_input = observer_input
@@ -285,6 +307,8 @@ class MyPointNetConv(MessagePassing):
                 signed=True,
             )
             self.qlinear.bias.copy_(quantized_bias)
+
+            self.qlinear.to(self.linear.weight.device)
     
     def __repr__(self) -> str:
         return (f'{self.__class__.__name__}(local_nn={self.local_nn}, '

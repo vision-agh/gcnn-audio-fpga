@@ -23,11 +23,11 @@ class GCN(Module):
         input_dim = 2+2 if config.graph.features else 2
         
         self.conv1 = MyPointNetConv(input_dim, conv_ch, bias=False, num_bits=16, first_layer=True)
-        self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
-        self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
-        self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=16)
+        self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
         
-        self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=16)
+        self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=8)
 
         if config.model.use_rnn:
             self.lstm = torch.nn.LSTM(config.rnn_channels, 
@@ -39,31 +39,28 @@ class GCN(Module):
 
 
     def forward(self, data):
+        outputs = []
         data.x = self.conv1(data)
-        
-        import numpy as np
-        with open('conv1_output.txt', 'w') as f:
-            for x in data.x:
-                to_save = x.detach().cpu().numpy()
-                to_save = np.flip(to_save)
-                for elem in to_save:
-                    f.write(str(int(elem)) + ' ')
-                f.write('\n')
-
+        outputs.append(data.x)
         data.x = self.conv2(data)
+        outputs.append(data.x)
         data.x = self.conv3(data)
+        outputs.append(data.x)
         data.x = self.conv4(data)
-
-        if self.config.model.use_rnn:
-            x = self.apply_lstm(data)
-        else:
-            x = self.pooling(data, self.conv4.observer_output)
+        outputs.append(data.x)
+        x = self.pooling(data, self.conv4.observer_output)
+        outputs.append(x)
 
         x = self.fc1(x)
         x = torch.relu(x)
+
+        outputs.append(x)
+
         x = self.fc2(x)
 
-        return x
+        outputs.append(x)
+
+        return x, outputs
     
     def calibrate(self):
         self.conv1.calibrate()
@@ -72,12 +69,12 @@ class GCN(Module):
         self.conv4.calibrate()
         self.pooling.calibrate()
 
-    def freeze(self):
-        self.conv1.freeze()
-        self.conv2.freeze(observer_input=self.conv1.observer_output)
-        self.conv3.freeze(observer_input=self.conv2.observer_output)
-        self.conv4.freeze(observer_input=self.conv3.observer_output)
-        self.pooling.freeze()
+    def quantize(self):
+        self.conv1.quantize()
+        self.conv2.quantize(observer_input=self.conv1.observer_output)
+        self.conv3.quantize(observer_input=self.conv2.observer_output)
+        self.conv4.quantize(observer_input=self.conv3.observer_output)
+        self.pooling.quantize()
     
     def apply_lstm(self,
                    data):

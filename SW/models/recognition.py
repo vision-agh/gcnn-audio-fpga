@@ -42,7 +42,8 @@ class LNRecognition(L.LightningModule):
         return optimizer
 
     def forward(self, data):
-        return self.model(data)
+        x, _ = self.model(data)
+        return x
 
     def training_step(self, batch, batch_idx):
         outputs = self.forward(data=batch)
@@ -51,8 +52,8 @@ class LNRecognition(L.LightningModule):
         y_prediction = torch.argmax(outputs, dim=-1)
         acc = accuracy(preds=y_prediction, target=batch['y'], task="multiclass", num_classes=self.num_classes)
 
-        self.log('train_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
-        self.log('train_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size)
+        self.log('train_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size, prog_bar=True)
+        self.log('train_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size, prog_bar=True)
 
         return loss
 
@@ -63,8 +64,8 @@ class LNRecognition(L.LightningModule):
         y_prediction = torch.argmax(outputs, dim=-1)
 
         acc = accuracy(preds=y_prediction, target=batch['y'], task="multiclass", num_classes=self.num_classes)
-        self.log('val_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
-        self.log('val_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size)
+        self.log('val_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size, prog_bar=True)
+        self.log('val_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         outputs = self.forward(data=batch)
@@ -73,10 +74,5 @@ class LNRecognition(L.LightningModule):
         
         acc = accuracy(preds=y_prediction, target=batch['y'], task="multiclass", num_classes=self.num_classes)
 
-        self.log('test_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size)
-        self.log('test_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size)
-
-    def on_validation_epoch_end(self):
-        if self.current_epoch == 0:
-            print('calibrating')
-            self.model.calibrate()
+        self.log('test_loss', loss, on_epoch=True, logger=True, batch_size=self.batch_size, prog_bar=True)
+        self.log('test_acc', acc, on_epoch=True, logger=True, batch_size=self.batch_size, prog_bar=True)

@@ -23,9 +23,10 @@ class MyGlobalPooling(nn.Module):
         super().__init__()
 
         self.aggregator = Pooling[aggregator]
-        self.calib_mode = False
-        self.freeze_mode = False
         self.num_bits = num_bits
+
+        self.register_buffer('calib_mode', torch.tensor(False, requires_grad=False))
+        self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
 
     def forward(
         self,
@@ -33,24 +34,26 @@ class MyGlobalPooling(nn.Module):
         observer: Observer
     ) -> Tensor:
         
-        if self.calib_mode is False and self.freeze_mode is False:
-            out = self.aggregator(data.x, data.batch)
-        elif self.calib_mode is True and self.freeze_mode is False:
+        if self.calib_mode and not self.quantize_mode:
             out = self.aggregator(data.x, data.batch)
             out = FakeQuantize.apply(out, observer)
-        elif self.freeze_mode is True:
+        elif self.quantize_mode:
             out = self.aggregator(data.x, data.batch)
             out = torch.clamp(out, 0, 2**self.num_bits-1)
             out = out.round()
             out = observer.dequantize_tensor(out)
+        elif not self.calib_mode and not self.quantize_mode:
+            out = self.aggregator(data.x, data.batch)
+        else:
+            raise ValueError('Invalid mode')
+        
         return out
     
     def calibrate(self):
-        self.calib_mode = True
+        self.calib_mode.fill_(True)
 
-    def freeze(self):
-        self.freeze_mode = True
+    def quantize(self):
+        self.quantize_mode.fill_(True)
     
-    # def __repr__(self) -> str:
-    #     return (f'{self.__class__.__name__}(local_nn={self.local_nn}, '
-    #             f'global_nn={self.global_nn})')
+    def __repr__(self) -> str:
+        return (f'{self.__class__.__name__} (num_bits={self.num_bits})')
