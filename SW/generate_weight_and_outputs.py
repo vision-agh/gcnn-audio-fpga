@@ -6,6 +6,7 @@ from models.recognition import LNRecognition
 from data.spiking_digits import SpikingDigits
 from data.dataset import SpikingDS
 
+
 cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
 cfg = dotmap.DotMap(cfg)
 
@@ -15,16 +16,22 @@ print(input.pos)
 dm = SpikingDS(files=['datasets/hdspikes/processed/test/0.pt'], config=cfg)
 
 data = dm[0]
-print(data.x)
 
-lm = LNRecognition(cfg)
+lm = LNRecognition.load_from_checkpoint('checkpoints/best_model_calibrated-v2.ckpt')
+
+
 model = lm.model
-model.freeze()
-model.load_state_dict(torch.load('model.pth', weights_only=True))
 model.eval()
 
-model(data)
+out, _ = model(data.to('cuda'))
+print(out)
 
+
+model.quantize()
+
+data = dm[0]
+out, _ = model(data.to('cuda'))
+print(out)
 # with open('model.txt', 'w') as f:
 #     for i, (x, pos) in enumerate(zip(data.x, data.pos)):
 #         t = pos[0]

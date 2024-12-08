@@ -24,9 +24,13 @@ def main():
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
+    print("\n#####################################################################################")
+    print("############################### TRAINING FLOAT MODEL ################################")
+    print("#####################################################################################\n")
+
     checkpoint_callback = ModelCheckpoint(
         dirpath='checkpoints',
-        filename='best_model',
+        filename='best_model_float',
         monitor='val_acc',
         mode='max',
         save_top_k=1
@@ -39,25 +43,49 @@ def main():
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=True)
 
+
     trainer.fit(model, dm)
+    best_model_path = checkpoint_callback.best_model_path
+    print(f"\nBest float model saved at: {best_model_path}\n")
+    model = LNRecognition.load_from_checkpoint(best_model_path)
+    trainer.test(model, datamodule=dm)
 
-    # print(model)
 
-    # best_model_path = checkpoint_callback.best_model_path
-    # print(f"Best model saved at: {best_model_path}")
+    print(" \n#####################################################################################")
+    print("############################### TRAINING QAT MODEL ################################")
+    print("#####################################################################################\n")
 
-    # # model = model.load_from_checkpoint(best_model_path)
-    # model = model.model.load_state_dict(torch.load(best_model_path))
+    checkpoint_callback = ModelCheckpoint(
+        dirpath='checkpoints',
+        filename='best_model_calibrated',
+        monitor='val_acc',
+        mode='max',
+        save_top_k=1
+    )
 
+    trainer = L.Trainer(max_epochs=1,
+                        log_every_n_steps=1, 
+                        gradient_clip_val=0.0,
+                        logger=wandb_logger,
+                        callbacks=[lr_monitor, checkpoint_callback],
+                        deterministic=True)
+    
+    model.model.calibrate()
+    trainer.fit(model, dm)
+    best_model_path = checkpoint_callback.best_model_path
+    print(f"\nBest model saved at: {best_model_path}\n")
+    model = LNRecognition.load_from_checkpoint(best_model_path)
 
     trainer.test(model, datamodule=dm)
 
-    model.model.freeze()
+    print(" \n#####################################################################################")
+    print("############################### QUANTIZING MODEL ################################")
+    print("#####################################################################################\n")
 
+    model.model.quantize()
     trainer.test(model, datamodule=dm)
 
-    torch.save(model.model.state_dict(), 'model.pth')
-
+    torch.save(model, 'checkpoints/best_model_quantized.ckpt')
 
 
 if __name__ == '__main__':
