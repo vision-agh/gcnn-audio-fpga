@@ -11,26 +11,30 @@ module generate_graph #(
     input  logic                              is_valid,
 
     output event_type                         out_event,
-    output edge_type        [MAX_EDGES-1 : 0] out_edges,
-    output logic            [T_WIDTH-1:0]     t_feature,
-    output logic            [F_WIDTH-1:0]     f_feature,
-    
-    output logic            [N_WIDTH-1:0]     n,
-    output logic                              empty
+    output edge_type        [MAX_EDGES-1 : 0] out_edges
+    //output logic            [T_WIDTH-1:0]     t_feature,
+    //output logic            [F_WIDTH-1:0]     f_feature
 );
 
+    event_type event_from_fifo;
+
+    fifo_handler #() u_input_fifo (
+        .clk           ( clk             ),
+        .reset         ( reset           ),
+        .t             ( t               ),
+        .f             ( f               ),
+        .is_valid      ( is_valid        ),
+        .out_event     ( event_from_fifo )
+    );
+
     edges_gen #() u_edges_gen (
-        .clk           ( clk           ),
-        .reset         ( reset         ),
-        .t             ( t             ),
-        .f             ( f             ),
-        .is_valid      ( is_valid      ),
-        .out_event     ( out_event     ),
-        .out_edges     ( out_edges     ),
-        .t_feature     ( t_feature     ),
-        .f_feature     ( f_feature     ),
-        .n             ( n             ),
-        .empty         ( empty         )
+        .clk           ( clk             ),
+        .reset         ( reset           ),
+        .in_event      ( event_from_fifo ),
+        .out_event     ( out_event       ),
+        .out_edges     ( out_edges       )
+        //.t_feature     ( t_feature       ),
+        //.f_feature     ( f_feature       )
     );
 
 endmodule
