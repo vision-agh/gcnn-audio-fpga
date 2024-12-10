@@ -2,12 +2,14 @@ package graph_pkg;
 
 
     parameter F_RADIUS   = 10; //Search radius will be F_RADIUS*SKIPSTEPS                    
-    parameter T_RADIUS   = 20972;                 
-    parameter MAX_EDGES  = F_RADIUS*2;         
-    parameter PRECISION  = 8;                    
-    
-    parameter T_WIDTH  = 21; //20+1
-    parameter F_WIDTH  = 21;
+    parameter T_RADIUS   = 20000;                 
+    parameter MAX_EDGES  = (F_RADIUS*2) + 1; //the same F neighbour possible!;         
+    parameter PRECISION_GEN  = 16;                    
+    parameter PRECISION_CONV1  = 8;                    
+
+
+    parameter T_WIDTH  = 20; //Max of 1000000
+    parameter F_WIDTH  = 10; //Max of 700
     
     parameter NUM_CHANNEL = 700;
     
@@ -36,20 +38,14 @@ package graph_pkg;
     parameter N_WIDTH = 14;
     
     parameter SKIP_STEP = 10;
-
-    typedef struct packed {
-      logic signed [T_WIDTH -1: 0] t;
-      logic signed [F_WIDTH -1: 0] f;
-      logic                         valid;
-    } graph_event_type;
     
-    typedef struct packed {
-      logic signed [T_WIDTH-1 : 0] t;
-      logic signed [F_WIDTH-1 : 0] f;
-      logic signed [T_WIDTH-1 : 0] dt;
-      logic signed [F_WIDTH-1 : 0] df;
-      logic                      is_connected;
-    } graph_edge_type;
+//    typedef struct packed {
+//      logic signed [T_WIDTH-1 : 0] t;
+//      logic signed [F_WIDTH-1 : 0] f;
+//      logic signed [T_WIDTH-1 : 0] dt;
+//      logic signed [F_WIDTH-1 : 0] df;
+//      logic                      is_connected;
+//    } edge_type;
     
     typedef struct packed {
       logic signed [T_WIDTH -1: 0] t;
@@ -60,8 +56,13 @@ package graph_pkg;
     typedef struct packed {
       logic signed [T_WIDTH-1 : 0] dt;
       logic                      is_connected;
-    } edge_type;
+    } edge_type_before_quantize;
 
-    parameter MEMORY_OPS_NUM = F_RADIUS + 1; 
+    parameter DELTA_T_WIDTH = 15; //max value of 20000
+
+    typedef struct packed {
+      logic signed [PRECISION_GEN-1 : 0] dt;
+      logic                              is_connected;
+    } edge_type;
 
 endpackage
