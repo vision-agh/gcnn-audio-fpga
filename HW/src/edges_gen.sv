@@ -35,18 +35,17 @@ module edges_gen #(
     
     assign din = {t, f, is_valid};  
     assign wen = is_valid;   
-           
-    fifo_wrapper_0 fifo_0 (
-        .rst_0    ( reset     ),
-        .wr_clk_0 ( clk       ),
-        .wr_en    ( wen       ),
-        .din      ( din       ),
-        .full     ( full      ),
-        .rd_en    ( fifo_read ),
-        .dout     ( dout      ),
-        .empty    ( empty     )
+
+    fifo_generator_0 fifo_0 (
+        .clk   ( clk        ),
+        .din   ( din    ),
+        .wr_en ( wen ),
+        .rd_en ( fifo_read  ),
+        .dout  ( dout   ),
+        .full  ( full  ),
+        .empty ( empty )
     );
-    
+
     logic [$clog2(MEMORY_OPS_NUM)-1:0] counter, counter_reg;
     graph_event_type fifo_event, fifo_event_reg; // fifo output
     

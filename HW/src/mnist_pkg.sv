@@ -1,10 +1,10 @@
 package graph_pkg;
 
 
-    parameter F_RADIUS           = 10; //Search radius will be F_RADIUS*SKIPSTEPS                    
-    parameter T_RADIUS           = 20972;                 
-    parameter MAX_EDGES          = F_RADIUS*2;         
-    parameter PRECISION          = 8;                    
+    parameter F_RADIUS   = 10; //Search radius will be F_RADIUS*SKIPSTEPS                    
+    parameter T_RADIUS   = 20972;                 
+    parameter MAX_EDGES  = F_RADIUS*2;         
+    parameter PRECISION  = 8;                    
     
     parameter T_WIDTH  = 21; //20+1
     parameter F_WIDTH  = 21;
@@ -16,24 +16,22 @@ package graph_pkg;
     parameter INPUT_PARAMETER = 2; 
     
     parameter INPUT_DIM_1 = 4; 
-    parameter OUTPUT_DIM_1 = 32;
-    
-    parameter INPUT_DIM_2 = OUTPUT_DIM_1 + INPUT_PARAMETER; 
-    parameter OUTPUT_DIM_2 = 32;
-    
-    parameter INPUT_DIM_3 = OUTPUT_DIM_2 + INPUT_PARAMETER; 
-    parameter OUTPUT_DIM_3 = 32;
-    
-    parameter INPUT_DIM_4 = OUTPUT_DIM_3 + INPUT_PARAMETER;; 
-    parameter OUTPUT_DIM_4 = 32;
-    
-    parameter INPUT_DIM_5 = OUTPUT_DIM_4 + INPUT_PARAMETER;; 
-    parameter OUTPUT_DIM_5 = 32;
-    
-    
+    parameter OUTPUT_DIM_1 = 64;
+
+    // parameter INPUT_DIM_2 = OUTPUT_DIM_1 + INPUT_PARAMETER; 
+    // parameter OUTPUT_DIM_2 = 32;
+
+    // parameter INPUT_DIM_3 = OUTPUT_DIM_2 + INPUT_PARAMETER; 
+    // parameter OUTPUT_DIM_3 = 32;
+
+    // parameter INPUT_DIM_4 = OUTPUT_DIM_3 + INPUT_PARAMETER;; 
+    // parameter OUTPUT_DIM_4 = 32;
+
+    // parameter INPUT_DIM_5 = OUTPUT_DIM_4 + INPUT_PARAMETER;; 
+    // parameter OUTPUT_DIM_5 = 32;
+
     parameter ZERO_POINT = '0;
     parameter MULTIPLIER = '0;
-    
 
     parameter N_WIDTH = 14;
     
