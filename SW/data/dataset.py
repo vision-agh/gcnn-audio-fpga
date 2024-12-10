@@ -1,4 +1,5 @@
 import torch
+import edge_generator
 from torch.utils.data import Dataset
 
 from data.augmentations import RandomRemoveNodes, RandomShiftChannel, \
@@ -54,14 +55,22 @@ class SpikingDS(Dataset):
 
         # Generate edge_index
 
-        if self.features:
-            data.edge_index, data.x = self.generate_edges(data.pos[:, 0], 
-                                                        data.pos[:, 1])
-        else:
-            data.edge_index = self.generate_edges(data.pos[:, 0], 
-                                                  data.pos[:, 1])
+        edge_gen = edge_generator.EdgeGenerator(self.config.general.num_channels, 
+                                                        self.config.graph.channel_radius, 
+                                                        self.config.graph.time_radius, 
+                                                        self.config.general.time_window, 
+                                                        self.config.graph.skip_channels, 
+                                                        self.config.graph.features)
 
-        # TODO: Calculate node features here outside the generate_edges function
+        data.edge_index, data.x = edge_gen.generate_edges(data.pos[:, 0], 
+                                                                data.pos[:, 1])
+
+        # if self.features:
+        #     data.edge_index, data.x = self.generate_edges(data.pos[:, 0], 
+        #                                                 data.pos[:, 1])
+        # else:
+        #     data.edge_index = self.generate_edges(data.pos[:, 0], 
+        #                                           data.pos[:, 1])
         
         # Normalise node positions
         data.pos[:, 0] = data.pos[:, 0] / self.time_window

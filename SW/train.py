@@ -24,6 +24,8 @@ def main():
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
+    print(model.model)
+
     print("\n#####################################################################################")
     print("############################### TRAINING FLOAT MODEL ################################")
     print("#####################################################################################\n")
@@ -36,7 +38,7 @@ def main():
         save_top_k=1
     )
 
-    trainer = L.Trainer(max_epochs=1, 
+    trainer = L.Trainer(max_epochs=100, 
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
                         logger=wandb_logger,
@@ -63,7 +65,7 @@ def main():
         save_top_k=1
     )
 
-    trainer = L.Trainer(max_epochs=1,
+    trainer = L.Trainer(max_epochs=20,
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
                         logger=wandb_logger,

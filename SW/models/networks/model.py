@@ -20,11 +20,11 @@ class GCN(Module):
         linear_ch = config.model.linear_channels
         num_classes = config.model.num_classes
 
-        input_dim = 2+2 if config.graph.features else 2
+        input_dim = 2 if config.graph.features else 0
         
-        self.conv1 = MyPointNetConv(input_dim, conv_ch, bias=False, num_bits=16, first_layer=True)
-        self.conv2 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
-        self.conv3 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv1 = MyPointNetConv(input_dim+2, 16, bias=False, num_bits=16, first_layer=True)
+        self.conv2 = MyPointNetConv(16+2, 32, bias=False, num_bits=8)
+        self.conv3 = MyPointNetConv(32+2, conv_ch, bias=False, num_bits=8)
         self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
         
         self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=8)
@@ -40,6 +40,11 @@ class GCN(Module):
 
     def forward(self, data):
         outputs = []
+
+        data.pos[:, 0] *= -50
+        data.pos[:, 1] += 1/7
+        data.pos[:, 1] *= 7/2
+
         data.x = self.conv1(data)
         outputs.append(data.x)
         data.x = self.conv2(data)
@@ -53,11 +58,9 @@ class GCN(Module):
 
         x = self.fc1(x)
         x = torch.relu(x)
-
         outputs.append(x)
-
+        # x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)
-
         outputs.append(x)
 
         return x, outputs

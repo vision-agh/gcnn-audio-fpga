@@ -143,7 +143,6 @@ class MyPointNetConv(MessagePassing):
 
     def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
-        msg = self.normalize_pos_diff(msg)
 
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
@@ -153,7 +152,6 @@ class MyPointNetConv(MessagePassing):
 
     def message_calib(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
-        msg = self.normalize_pos_diff(msg)
 
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
@@ -192,7 +190,6 @@ class MyPointNetConv(MessagePassing):
     
     def message_quant(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
-        msg = self.normalize_pos_diff(msg)
 
         '''
             Quantize input message, if first layer we need to quantize both x_j and pos differences
@@ -312,4 +309,4 @@ class MyPointNetConv(MessagePassing):
     
     def __repr__(self) -> str:
         return (f'{self.__class__.__name__}(local_nn={self.local_nn}, '
-                f'global_nn={self.global_nn})')
+                f'global_nn={self.global_nn}), num_bits={self.num_bits}')

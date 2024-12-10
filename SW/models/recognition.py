@@ -37,8 +37,13 @@ class LNRecognition(L.LightningModule):
                                      weight_decay=self.weight_decay)
 
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+
+        print("Optimizer and LR Scheduler configured")
+        print(optimizer)
+        # print(lr_scheduler)
+
         # return {'optimizer': optimizer, 
-        #         'lr_scheduler': lr_scheduler}
+        #          'lr_scheduler': lr_scheduler}
         return optimizer
 
     def forward(self, data):
