@@ -157,8 +157,8 @@ class MyPointNetConv(MessagePassing):
             msg = torch.cat([x_j, msg], dim=1)
 
         # Update input observer
-        # if self.training:
-        self.observer_input.update(msg)
+        if self.training:
+            self.observer_input.update(msg)
         msg = FakeQuantize.apply(msg, self.observer_input)
 
         # Simulate batch normalization during calibration
@@ -173,8 +173,8 @@ class MyPointNetConv(MessagePassing):
         weight, bias = self.merge_norm(mean, std)
 
         # Update weight observer
-        # if self.training:
-        self.observer_weight.update(weight)
+        if self.training:
+            self.observer_weight.update(weight)
 
         # Apply quantized weights
         if self.local_nn is not None:
@@ -182,9 +182,9 @@ class MyPointNetConv(MessagePassing):
             msg = F.linear(msg, weight_q, bias)
 
         # Update output observer
-        # if self.training:
-        self.observer_output.update(msg)
-        self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
+        if self.training:
+            self.observer_output.update(msg)
+            self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
         msg = FakeQuantize.apply(msg, self.observer_output)
         return msg
     
@@ -234,7 +234,9 @@ class MyPointNetConv(MessagePassing):
         else:
             gamma = torch.ones_like(std)
             beta = torch.zeros_like(std)
+
         W = self.linear.weight
+
         if self.bias:
             b = self.linear.bias
         else:
@@ -264,23 +266,23 @@ class MyPointNetConv(MessagePassing):
             self.observer_output = observer_output
 
         # Quantize scales for input, weight, and output
-        self.qscale_in = (2 ** self.num_bits_obs - 1) * self.observer_input.scale
+        self.qscale_in = (2 ** self.num_bits_obs) * self.observer_input.scale
         self.qscale_in = self.qscale_in.round()
-        self.observer_input.scale = self.qscale_in / (2 ** self.num_bits_obs - 1)
+        self.observer_input.scale = self.qscale_in / (2 ** self.num_bits_obs)
 
-        self.qscale_w = (2 ** self.num_bits_obs - 1) * self.observer_weight.scale
+        self.qscale_w = (2 ** self.num_bits_obs) * self.observer_weight.scale
         self.qscale_w = self.qscale_w.round()
-        self.observer_weight.scale = self.qscale_w / (2 ** self.num_bits_obs - 1)
+        self.observer_weight.scale = self.qscale_w / (2 ** self.num_bits_obs)
 
-        self.qscale_out = (2 ** self.num_bits_obs - 1) * self.observer_output.scale
+        self.qscale_out = (2 ** self.num_bits_obs) * self.observer_output.scale
         self.qscale_out = self.qscale_out.round()
-        self.observer_output.scale = self.qscale_out / (2 ** self.num_bits_obs - 1)
+        self.observer_output.scale = self.qscale_out / (2 ** self.num_bits_obs)
 
         # Compute scaling factor m
-        m = (self.observer_weight.scale * self.observer_input.scale) / self.observer_output.scale
-        m_scaled = m * (2 ** self.num_bits_obs - 1)
-        self.qscale_m = m_scaled.round()
-        self.m = self.qscale_m / (2 ** self.num_bits_obs - 1)
+        self.qscale_m = (self.observer_weight.scale * self.observer_input.scale) / self.observer_output.scale
+        self.qscale_m = self.qscale_m * (2 ** self.num_bits_obs)
+        self.qscale_m = self.qscale_m.round()
+        self.m = self.qscale_m / (2 ** self.num_bits_obs)
 
         # Merge batch normalization parameters
         std = torch.sqrt(self.norm.running_var + self.norm.eps)

@@ -24,6 +24,8 @@ def main():
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
+
+    print(cfg)
     print(model.model)
 
     print("\n#####################################################################################")

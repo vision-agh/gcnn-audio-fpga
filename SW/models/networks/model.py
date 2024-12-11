@@ -22,10 +22,10 @@ class GCN(Module):
 
         input_dim = 2 if config.graph.features else 0
         
-        self.conv1 = MyPointNetConv(input_dim+2, 16, bias=False, num_bits=16, first_layer=True)
-        self.conv2 = MyPointNetConv(16+2, 32, bias=False, num_bits=8)
-        self.conv3 = MyPointNetConv(32+2, conv_ch, bias=False, num_bits=8)
-        self.conv4 = MyPointNetConv(conv_ch+2, conv_ch, bias=False, num_bits=8)
+        self.conv1 = MyPointNetConv(input_dim+2, 64, bias=False, num_bits=16, first_layer=True)
+        self.conv2 = MyPointNetConv(64+2, 64, bias=False, num_bits=8)
+        self.conv3 = MyPointNetConv(64+2, 64, bias=False, num_bits=8)
+        self.conv4 = MyPointNetConv(64+2, 64, bias=False, num_bits=8)
         
         self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=8)
 
@@ -34,8 +34,8 @@ class GCN(Module):
                                       config.rnn_channels, 
                                       config.rnn_layers)
 
-        self.fc1 = Linear(conv_ch, linear_ch)
-        self.fc2 = Linear(linear_ch, num_classes)
+        self.fc1 = Linear(64, 64)
+        self.fc2 = Linear(64, num_classes)
 
 
     def forward(self, data):
