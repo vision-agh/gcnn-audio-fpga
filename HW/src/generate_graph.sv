@@ -11,9 +11,9 @@ module generate_graph #(
     input  logic                              is_valid,
 
     output event_type                         out_event,
-    output edge_type        [MAX_EDGES-1 : 0] out_edges
-    //output logic            [T_WIDTH-1:0]     t_feature,
-    //output logic            [F_WIDTH-1:0]     f_feature
+    output edge_type        [MAX_EDGES-1 : 0] out_edges,
+    output logic            [PRECISION_GEN-1:0]     t_feature,
+    output logic            [PRECISION_GEN-1:0]     f_feature
 );
 
     event_type event_from_fifo;
@@ -32,9 +32,9 @@ module generate_graph #(
         .reset         ( reset           ),
         .in_event      ( event_from_fifo ),
         .out_event     ( out_event       ),
-        .out_edges     ( out_edges       )
-        //.t_feature     ( t_feature       ),
-        //.f_feature     ( f_feature       )
+        .out_edges     ( out_edges       ),
+        .t_feature     ( t_feature       ),
+        .f_feature     ( f_feature       )
     );
 
 endmodule

@@ -33,7 +33,8 @@ package graph_pkg;
     // parameter OUTPUT_DIM_5 = 32;
 
     parameter ZERO_POINT = '0;
-    parameter MULTIPLIER = '0;
+    parameter T_MULTIPLIER = 4295;
+    parameter F_MULTIPLIER = 6135480;
 
     parameter N_WIDTH = 14;
     

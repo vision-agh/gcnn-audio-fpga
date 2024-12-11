@@ -6,8 +6,8 @@ module gen_from_file_ut;
 
     parameter MAX_X_COORD = 120;
     parameter MAX_Y_COORD = 100;
-    parameter INPUT_PATH = "/home/pwz/Documents/SAMOLOT/TEST_AUDIO/audio.txt";
-    parameter OUTPUT_PATH = "/home/pwz/Documents/SAMOLOT/TEST_AUDIO/OUTPUT_GRAPH.txt";
+    parameter INPUT_PATH = "/home/360/360.3-Stages/360.3.91-HN280727/audio.txt";
+    parameter OUTPUT_PATH = "/home/360/360.3-Stages/360.3.91-HN280727/OUTPUT_GRAPH.txt";
     parameter NS_PER_CLK = 5; // 250MHz is 4 clk every ns
     parameter TIME_WINDOW = 1000000; // We test only single time window
 
@@ -114,8 +114,8 @@ module gen_from_file_ut;
         .f(f),
         .is_valid(is_valid),
         .out_event(out_event),
-        .out_edges(out_edges)
-        //.t_feature(t_feature),
+        .out_edges(out_edges),
+        .t_feature(t_feature)
         //.f_feature(f_feature)
     );
 

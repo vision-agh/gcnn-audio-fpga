@@ -7,27 +7,29 @@ module edges_gen #(
     parameter int DWIDTH      = T_WIDTH + 1,          // t + valid
     parameter int FIFO_WIDTH  = T_WIDTH + F_WIDTH + 1 // t + f + valid
 )(
-    input logic clk,
-    input logic reset,
-    input event_type                          in_event,
+    input  logic                                          clk,
+    input  logic                                          reset,
+    input  event_type                                     in_event,
 
-    output event_type                         out_event,
-    output edge_type_before_quantize  [MAX_EDGES-1:0]         out_edges
-    //output logic            [T_WIDTH-1:0]     t_feature,
-    //output logic            [F_WIDTH-1:0]     f_feature
+    output event_type                                     out_event,
+    output edge_type_before_quantize  [MAX_EDGES-1:0]     out_edges,
+    output logic                      [PRECISION_GEN-1:0] t_feature,
+    output logic                      [PRECISION_GEN-1:0] f_feature
 );
     
     logic [$clog2(F_RADIUS):0] counter, counter_reg;
-    event_type in_event_reg; // fifo output
+    event_type in_event_reg, in_event_reg_2;
 
     localparam IDLE = 2'd0;
     localparam GGEN = 2'd1;
     logic state = IDLE;
 
     // Memory interface signals
-    logic [AWIDTH-1:0] addra, addrb;
+    logic [AWIDTH-1:0] addra, addrb, addra_reg, addrb_reg;
     logic [DWIDTH-1:0] dinb, douta, doutb;
     logic ena, wea, web, enb;
+    
+    logic port_a_valid, port_b_valid;
 
     // Context memory instantiation
     memory #(
@@ -49,7 +51,7 @@ module edges_gen #(
     );
     logic                           rd_a, rd_b, wr_a, rd_a_reg, rd_b_reg;
     logic                           condition_a, condition_b, condition_a_reg, condition_b_reg;
-    edge_type_before_quantize [MAX_EDGES-1:0] edges_reg;
+    edge_type_before_quantize [MAX_EDGES-1:0] edges_reg, edges_reg_2;
 
     assign rd_a = ena & !wea;
     assign rd_b = enb & !wea;
@@ -68,9 +70,9 @@ module edges_gen #(
     assign condition_a = (addra >= 0) && (addra < NUM_CHANNEL);
     assign condition_b = (addrb >= 0) && (addrb < NUM_CHANNEL);
 
-    logic [26-1 : 0] t_temp;
+    logic [24-1 : 0] t_temp;
     logic start;
-    logic [18-1 : 0] f_temp;
+    logic [14-1 : 0] f_temp;
     logic [$clog2(MAX_EDGES)-1 : 0]             num_edges;
 
     // Counter and edge processing
@@ -80,8 +82,12 @@ module edges_gen #(
             state <= IDLE;
             rd_b_reg <= 0;
             start <= '0;
-            out_event.valid <= '0;
+//            out_event.valid <= '0;
             counter <= F_RADIUS;
+            t_temp <= 0;
+            num_edges <= 0;
+            addra_reg <= '0;
+            addrb_reg <= '0;
         end else begin
             if (counter < F_RADIUS && state==GGEN) begin
                 counter <= counter + 1;
@@ -90,6 +96,13 @@ module edges_gen #(
                 counter <= '0;
                 state <= GGEN;
                 in_event_reg <= in_event;
+                t_temp <= '0;
+                f_temp <= '0;
+                num_edges <= '0;
+            end else begin
+                t_temp  <= (port_a_valid ? douta[DWIDTH-1:1] : '0) + (port_b_valid ? doutb[DWIDTH-1:1] : '0) + t_temp;
+                f_temp  <= (port_a_valid ? addra_reg : '0) + (port_b_valid ? addrb_reg : '0) + f_temp; 
+                num_edges <= port_a_valid + port_b_valid + num_edges;
             end
             if (counter_reg == F_RADIUS && counter == F_RADIUS && state == GGEN) begin
                 state <= IDLE;
@@ -97,13 +110,13 @@ module edges_gen #(
             end
             if (state == IDLE) begin
                 if (start == 1) begin
-                    out_edges <= edges_reg;
-                    out_event <= in_event_reg;
+                    edges_reg_2 <= edges_reg;
+                    in_event_reg_2 <= in_event_reg;
                     start <= '0;
                 end
-                else begin
-                    out_event.valid <= '0;
-                end
+//                else begin
+//                    out_event.valid <= '0;
+//                end
             end
             counter_reg <= counter;
             condition_a_reg <= condition_a;
@@ -111,77 +124,98 @@ module edges_gen #(
             
             // Port A
             edges_reg[counter_reg].dt            <= in_event_reg.t - douta[DWIDTH-1:1];
-            edges_reg[counter_reg].is_connected  <= douta[0] && condition_a_reg && ((in_event_reg.t - douta[DWIDTH-1:1]) < T_RADIUS);
+            edges_reg[counter_reg].is_connected  <= port_a_valid;
     
             // Port B (ON counter F_RADIUS we do write on B)
             if (counter_reg != F_RADIUS) begin
                 edges_reg[F_RADIUS+1+counter_reg].dt            <= in_event_reg.t - doutb[DWIDTH-1:1];
-                edges_reg[F_RADIUS+1+counter_reg].is_connected  <= doutb[0] && condition_b_reg && ((in_event_reg.t - doutb[DWIDTH-1:1]) < T_RADIUS);
+                edges_reg[F_RADIUS+1+counter_reg].is_connected  <= port_b_valid;
             end
+            
+            addra_reg <= addra;
+            addrb_reg <= addrb;
+            
         end
     end
     
-//    logic  divisor_tvalid,dividend_tvalid,t_avg_valid,f_avg_valid;
-//    assign divisor_tvalid  = (counter_reg == MEMORY_OPS_NUM-1) && (num_edges != 0);
-//    assign dividend_tvalid = (counter_reg == MEMORY_OPS_NUM-1) && (num_edges != 0);
+    assign port_a_valid = douta[0] && condition_a_reg && ((in_event_reg.t - douta[DWIDTH-1:1]) < T_RADIUS);
+    assign port_b_valid = doutb[0] && condition_b_reg && ((in_event_reg.t - doutb[DWIDTH-1:1]) < T_RADIUS) && (counter_reg != F_RADIUS);
+   
+    logic  divisor_tvalid,dividend_tvalid,t_avg_valid,f_avg_valid;
     
-//    logic [32-1 : 0] temp_t_feature;
-//    logic [24-1 : 0] temp_f_feature;
-//    assign t_feature = t_avg_valid ? temp_t_feature[22:2] : '0;
-//    assign f_feature = f_avg_valid ? {3'b0,temp_f_feature[19:2]} : '0;
-    
-    
-//    div_t div_t (
-//        .aclk                   ( clk             ),
-//        .s_axis_divisor_tdata   ( num_edges       ),//5bit
-//        .s_axis_divisor_tvalid  ( divisor_tvalid  ),
-//        .s_axis_dividend_tdata  ( t_temp          ),
-//        .s_axis_dividend_tvalid ( dividend_tvalid ),//26bit
-//        .m_axis_dout_tdata      ( temp_t_feature  ),
-//        .m_axis_dout_tvalid     ( t_avg_valid     )
-//    );
-    
-//    div_f div_f (
-//        .aclk                   ( clk             ),
-//        .s_axis_divisor_tdata   ( num_edges       ),//5bit
-//        .s_axis_divisor_tvalid  ( divisor_tvalid  ),
-//        .s_axis_dividend_tdata  ( f_temp          ),//18bit
-//        .s_axis_dividend_tvalid ( dividend_tvalid ),
-//        .m_axis_dout_tdata      ( temp_f_feature  ),
-//        .m_axis_dout_tvalid     ( f_avg_valid     )
-//    );
+    always @(posedge clk) begin
+        if(reset) begin
+            divisor_tvalid <= 0;
+            dividend_tvalid <= 0;
+        end else begin
+            if((counter_reg == F_RADIUS) && (num_edges != 0)) begin
+                divisor_tvalid <= 1;
+                dividend_tvalid <= 1;
+            end else begin
+                divisor_tvalid <= 0;
+                dividend_tvalid <= 0;
+            end
+        end
+    end
 
-//    delay_module #(
-//        .N     ( AWIDTH*2 ),
-//        .DELAY ( 1        )
-//    ) delay_f_coord (
-//        .clk   ( clk                           ),
-//        .idata ( {f_coord_a,    f_coord_b    } ),
-//        .odata ( {f_coord_a_reg,f_coord_b_reg} )
-//    );
+    
+    logic [40-1 : 0] t_average;
+    logic [30-1 : 0] f_average;
+    logic [40+$clog2(T_MULTIPLIER)-1:0] extended_t_average,temp_t_average;
+    logic [30+$clog2(F_MULTIPLIER)-1:0] extended_f_average,temp_f_average;
+    
+    assign extended_t_average = t_avg_valid ? {{ $clog2(T_MULTIPLIER){1'b0} }, t_average} : '0;
+    assign extended_f_average = f_avg_valid ? {{ $clog2(F_MULTIPLIER){1'b0} }, f_average} : '0;
+    
+    assign temp_t_average = (extended_t_average * T_MULTIPLIER >>> 16) + ZERO_POINT;
+    assign temp_f_average = (extended_f_average * F_MULTIPLIER >>> 16) + ZERO_POINT;
+    //rounding
+    assign t_feature = temp_t_average[PRECISION_GEN-1] ? temp_t_average[16+:PRECISION_GEN] + 1 : temp_t_average[16+:PRECISION_GEN];
+    assign f_feature = temp_f_average[PRECISION_GEN-1] ? temp_f_average[16+:PRECISION_GEN] + 1 : temp_f_average[16+:PRECISION_GEN];
+    
+    div_t div_t ( //32 clock latency
+        .aclk                   ( clk             ),
+        .s_axis_divisor_tdata   ( num_edges       ),//5bit
+        .s_axis_divisor_tvalid  ( divisor_tvalid  ),
+        .s_axis_dividend_tdata  ( t_temp          ),//24bit
+        .s_axis_dividend_tvalid ( dividend_tvalid ),
+        .m_axis_dout_tdata      ( t_average       ),//39 ~16 15~0
+        .m_axis_dout_tvalid     ( t_avg_valid     )
+    );
+    
+    div_f div_f (//32 clock latency
+        .aclk                   ( clk             ),
+        .s_axis_divisor_tdata   ( num_edges       ),//5bit
+        .s_axis_divisor_tvalid  ( divisor_tvalid  ),
+        .s_axis_dividend_tdata  ( f_temp          ),//14bit
+        .s_axis_dividend_tvalid ( dividend_tvalid ),
+        .m_axis_dout_tdata      ( f_average       ),//30~16 15~0
+        .m_axis_dout_tvalid     ( f_avg_valid     )
+    );
+    
+    // wait for the result of divider
+    delay_module #(
+        .N        ( F_WIDTH + T_WIDTH  + 1),
+        .DELAY    ( 31 )
+    ) delay_event (
+        .clk   (clk),
+        .idata ({in_event_reg_2.t,  in_event_reg_2.f, in_event_reg_2.valid}),
+        .odata ({out_event.t, out_event.f, out_event.valid})
+    );
 
-//    // Output edges generation
-//    genvar i, j;
-//    generate
-//        for (i = 0; i < MEMORY_OPS_NUM-1; i++) begin
-//            always @(posedge clk) begin
-//                out_edges[i].t            <= edges_reg[i].is_connected ? edges_reg[i].t : '0;
-//                out_edges[i].f            <= edges_reg[i].is_connected ? edges_reg[i].f : '0;
-//                out_edges[i].dt           <= edges_reg[i].is_connected ? edges_reg[i].dt : '0;
-//                out_edges[i].df           <= edges_reg[i].is_connected ? edges_reg[i].df : '0;
-//                out_edges[i].is_connected <= edges_reg[i].is_connected;
-//            end
-//        end
-//        for (j = MEMORY_OPS_NUM-1; j < MAX_EDGES; j++) begin
-//            always @(posedge clk) begin
-//                out_edges[j].t            <= edges_reg[j].is_connected ? edges_reg[j].t : '0;
-//                out_edges[j].f            <= edges_reg[j].is_connected ? edges_reg[j].f : '0;
-//                out_edges[j].dt           <= edges_reg[j].is_connected ? edges_reg[j].dt : '0;
-//                out_edges[j].df           <= edges_reg[j].is_connected ? edges_reg[j].df : '0;
-//                out_edges[j].is_connected <= edges_reg[j].is_connected;
-//            end
-//        end
-//    endgenerate
+    genvar j;
+    generate
+        for (j = 0; j < MAX_EDGES; j = j + 1) begin
+            delay_module #(
+                .N        ( T_WIDTH + 1),
+                .DELAY    ( 31 )
+            ) delay_edges (
+                .clk   (clk),
+                .idata ({edges_reg_2[j].dt,edges_reg_2[j].is_connected}),
+                .odata ({out_edges[j].dt,out_edges[j].is_connected})
+            );            
+        end
+    endgenerate  
 
     // synthesis translate_off
     always @(posedge clk) begin
