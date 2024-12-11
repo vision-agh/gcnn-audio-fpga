@@ -115,8 +115,8 @@ module gen_from_file_ut;
         .is_valid(is_valid),
         .out_event(out_event),
         .out_edges(out_edges),
-        .t_feature(t_feature)
-        //.f_feature(f_feature)
+        .t_feature(t_feature),
+        .f_feature(f_feature)
     );
 
 endmodule
