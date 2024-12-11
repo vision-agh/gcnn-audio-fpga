@@ -115,8 +115,8 @@ class SpikingDS(Dataset):
                 mean_t = 0
                 mean_channel = 0
             else:
-                mean_t = round(sum_t / sum_idx)
-                mean_channel = round(sum_channel / sum_idx)
+                mean_t = round((sum_t / sum_idx) + 1e-6) # Add 1e-6 because Python is stupid
+                mean_channel = round((sum_channel / sum_idx) + 1e-6)
 
             channel_last_event[int(channel)] = (time, idx)
 
