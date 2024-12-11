@@ -131,15 +131,6 @@ class MyPointNetConv(MessagePassing):
             return self.message_float(x_i, x_j, pos_i, pos_j)
         else:
             raise ValueError('Invalid mode')
-        
-    def normalize_pos_diff(self, pos_diff: Tensor) -> Tensor:
-        '''
-            Normalize the positional differences between two nodes
-        '''
-        pos_diff[:, 0] *= (-50)
-        pos_diff[:, 1] += 1/7
-        pos_diff[:, 1] *= 7/2
-        return pos_diff
 
     def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
@@ -185,6 +176,7 @@ class MyPointNetConv(MessagePassing):
         if self.training:
             self.observer_output.update(msg)
             self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
+
         msg = FakeQuantize.apply(msg, self.observer_output)
         return msg
     
@@ -253,11 +245,9 @@ class MyPointNetConv(MessagePassing):
     def quantize(self,
                observer_input: Observer = None,
                observer_output: Observer = None):
-        
         '''
             Quantize model - quantize weights/bias and calculate scales
         '''
-
         self.quantize_mode.fill_(True)
 
         if observer_input is not None:
