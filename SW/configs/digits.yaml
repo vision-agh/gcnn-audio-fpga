@@ -26,8 +26,9 @@ train:
 model:
   num_classes: 20
   conv_channels: [64, 64, 64, 64]
-  linear_channels: 64
+  conv_bits: [16, 8, 8, 8]
 
+  linear_channels: 64
   global_pooling: mean # mean, max or add
 
 

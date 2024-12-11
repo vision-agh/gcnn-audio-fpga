@@ -17,22 +17,19 @@ class GCN(Module):
         self.config = config
 
         conv_ch = config.model.conv_channels
+        conv_bits = config.model.conv_bits
+
         linear_ch = config.model.linear_channels
         num_classes = config.model.num_classes
 
         input_dim = 2 if config.graph.features else 0
         
-        self.conv1 = MyPointNetConv(input_dim+2, conv_ch[0], bias=False, num_bits=16, first_layer=True)
-        self.conv2 = MyPointNetConv(conv_ch[0]+2, conv_ch[1], bias=False, num_bits=8)
-        self.conv3 = MyPointNetConv(conv_ch[1]+2, conv_ch[2], bias=False, num_bits=8)
-        self.conv4 = MyPointNetConv(conv_ch[2]+2, conv_ch[3], bias=False, num_bits=8)
+        self.conv1 = MyPointNetConv(input_dim+2, conv_ch[0], bias=False, num_bits=conv_bits[0], first_layer=True)
+        self.conv2 = MyPointNetConv(conv_ch[0]+2, conv_ch[1], bias=False, num_bits=conv_bits[1])
+        self.conv3 = MyPointNetConv(conv_ch[1]+2, conv_ch[2], bias=False, num_bits=conv_bits[2])
+        self.conv4 = MyPointNetConv(conv_ch[2]+2, conv_ch[3], bias=False, num_bits=conv_bits[3])
         
-        self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=8)
-
-        if config.model.use_rnn:
-            self.lstm = torch.nn.LSTM(config.rnn_channels, 
-                                      config.rnn_channels, 
-                                      config.rnn_layers)
+        self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=conv_bits[3])
 
         self.fc1 = Linear(conv_ch[3], linear_ch)
         self.fc2 = Linear(linear_ch, num_classes)
@@ -41,9 +38,9 @@ class GCN(Module):
     def forward(self, data):
         outputs = []
 
-        data.pos[:, 0] *= -50
-        data.pos[:, 1] += 1/7
-        data.pos[:, 1] *= 7/2
+        data.pos[:, 0] *= -50 # 1/radius_time [in seconds]
+        data.pos[:, 1] += 1/7 # radius_channel / num_channels
+        data.pos[:, 1] *= 7/2 # num_channels / (2*radius_channel)
 
         data.x = self.conv1(data)
         outputs.append(data.x)
@@ -78,37 +75,3 @@ class GCN(Module):
         self.conv3.quantize(observer_input=self.conv2.observer_output)
         self.conv4.quantize(observer_input=self.conv3.observer_output)
         self.pooling.quantize()
-    
-    def apply_lstm(self,
-                   data):
-        
-        seq_len = self.config.model.seq_length
-        pooled_outputs = []
-
-        max_batch = data.batch.max().item() + 1
-
-        for i in range(seq_len):
-            mask1 = data.pos[:, 0] >= 1/seq_len * i
-            mask2 = data.pos[:, 0] < 1/seq_len * (i + 1)
-            mask = mask1 & mask2
-
-            mean = torch.zeros((max_batch, x.size(1)), device=x.device)
-
-            if mask.sum() > 0:
-                new_x = x[mask]
-                batch = data.batch[mask]
-                out = self.pooling(new_x, batch)
-                batch_idx = torch.unique(batch)
-
-                for idx in range(batch_idx.max().item() + 1):
-                    mean[idx] = out[idx]
-
-            pooled_outputs.append(mean)
-
-        lstm_input = torch.stack(pooled_outputs, dim=0)
-
-        lstm_out, (h_n, c_n) = self.lstm(lstm_input)
-
-        x = lstm_out[-1] 
-
-        return x
