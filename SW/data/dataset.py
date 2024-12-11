@@ -26,12 +26,20 @@ class SpikingDS(Dataset):
         self.train = train
 
         # Augmentations
-        if train:
-            self.random_remove_nodes = RandomRemoveNodes()
-            self.random_shift_time = RandomShiftTime(time_window=self.time_window)
-            self.random_shift_channel = RandomShiftChannel(channels=self.num_channels)
-            self.random_spread_time = RandomSpreadTime(time_window=self.time_window)
-            self.random_spread_channel = RandomSpreadChannel(channels=self.num_channels)
+        self.random_remove_nodes = RandomRemoveNodes()
+        self.random_shift_time = RandomShiftTime(time_window=self.time_window)
+        self.random_shift_channel = RandomShiftChannel(channels=self.num_channels)
+        self.random_spread_time = RandomSpreadTime(time_window=self.time_window)
+        self.random_spread_channel = RandomSpreadChannel(channels=self.num_channels)
+
+    def apply_augmentations(self, data):
+        if self.train:
+            data = self.random_remove_nodes(data)
+            data = self.random_shift_time(data)
+            data = self.random_shift_channel(data)
+            data = self.random_spread_time(data)
+            data = self.random_spread_channel(data)
+        return data
 
     def __len__(self) -> int:
         return len(self.files)
@@ -40,21 +48,14 @@ class SpikingDS(Dataset):
         data_file = self.files[index]
         data = torch.load(data_file, weights_only=False)
 
-        # TODO: Implement augmentations here
-        # if self.train:
-        #     data = self.random_remove_nodes(data)
-        #     data = self.random_shift_time(data)
-        #     data = self.random_shift_channel(data)
-            # data = self.random_spread_time(data)
-            # data = self.random_spread_channel(data)
+        # data = self.apply_augmentations(data)
 
         data.pos[:, 0] = data.pos[:, 0] - data.pos[0, 0] # Start time from 0
-        data.pos[:,0] = torch.round(data.pos[:, 0], decimals=6)
-        mask = data.pos[:, 0] < self.time_window
-        data.pos = data.pos[mask] # Cut data to time window
+        data.pos[:, 0] *= 1e6 # Convert to microseconds
+        data.pos[:, 0] = torch.round(data.pos[:, 0]) # Round to nearest microsecond
+        data.pos = data.pos[data.pos[:, 0] < self.time_window] # Cut data to time window
 
-        # Generate edge_index
-
+        # Generate edge_index and features
         edge_gen = edge_generator.EdgeGenerator(self.config.general.num_channels, 
                                                         self.config.graph.channel_radius, 
                                                         self.config.graph.time_radius, 
@@ -63,14 +64,7 @@ class SpikingDS(Dataset):
                                                         self.config.graph.features)
 
         data.edge_index, data.x = edge_gen.generate_edges(data.pos[:, 0], 
-                                                                data.pos[:, 1])
-
-        # if self.features:
-        #     data.edge_index, data.x = self.generate_edges(data.pos[:, 0], 
-        #                                                 data.pos[:, 1])
-        # else:
-        #     data.edge_index = self.generate_edges(data.pos[:, 0], 
-        #                                           data.pos[:, 1])
+                                                            data.pos[:, 1])
         
         # Normalise node positions
         data.pos[:, 0] = data.pos[:, 0] / self.time_window
@@ -94,9 +88,12 @@ class SpikingDS(Dataset):
 
             time, channel = time.item(), channel.item()
 
-            for n_channel in range(max(0, int(channel - self.channel_radius)), 
-                                   min(self.num_channels - 1, int(channel + self.channel_radius + 1)), 
+            for n_channel in range(int(channel - self.channel_radius), 
+                                   int(channel + self.channel_radius + 1), 
                                    self.skip_channels):
+
+                if n_channel < 0 or n_channel >= self.num_channels:
+                    continue
                 
                 if channel_last_event[n_channel] is not None:
                     n_time, n_idx = channel_last_event[n_channel]
@@ -118,8 +115,8 @@ class SpikingDS(Dataset):
                 mean_t = 0
                 mean_channel = 0
             else:
-                mean_t = sum_t / sum_idx
-                mean_channel = sum_channel / sum_idx
+                mean_t = round(sum_t / sum_idx)
+                mean_channel = round(sum_channel / sum_idx)
 
             channel_last_event[int(channel)] = (time, idx)
 

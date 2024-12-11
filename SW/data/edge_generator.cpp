@@ -35,10 +35,14 @@ public:
             float sum_channel = 0;
             int sum_idx = 0;
 
-            for (int n_channel = std::max(0, channel - static_cast<int>(channel_radius)); 
-                 n_channel <= std::min(num_channels - 1, channel + static_cast<int>(channel_radius)); 
+            for (int n_channel = channel - static_cast<int>(channel_radius); 
+                 n_channel <= channel + static_cast<int>(channel_radius); 
                  n_channel += skip_channels) 
             {
+                if (n_channel < 0 || n_channel >= num_channels) {
+                    continue;
+                }
+
                 if (channel_last_event[n_channel].second != -1) {
                     float n_time = channel_last_event[n_channel].first;
                     int n_idx = channel_last_event[n_channel].second;
@@ -59,8 +63,8 @@ public:
                 }
             }
 
-            float mean_t = sum_idx > 0 ? sum_t / sum_idx : 0;
-            float mean_channel = sum_idx > 0 ? sum_channel / sum_idx : 0;
+            float mean_t = sum_idx > 0 ? std::round(sum_t / sum_idx) : 0;
+            float mean_channel = sum_idx > 0 ? std::round(sum_channel / sum_idx) : 0;
 
             channel_last_event[channel] = {time, idx};
 
