@@ -21,6 +21,8 @@ class LNRecognition(L.LightningModule):
                  config):
         super().__init__()
 
+        self.config = config
+
         self.lr = config.train.lr
         self.weight_decay = config.train.weight_decay
 
