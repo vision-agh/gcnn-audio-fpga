@@ -74,7 +74,6 @@ def main():
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=True)
     
-    model.lr = 1e-4
     model.model.calibrate()
     trainer.fit(model, dm)
     best_model_path = checkpoint_callback.best_model_path

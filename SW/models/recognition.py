@@ -41,7 +41,7 @@ class LNRecognition(L.LightningModule):
         if self.config.train.use_scheduler:
             lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
                                                                     mode='max',
-                                                                    factor=0.1,
+                                                                    factor=0.5,
                                                                     patience=5,
                                                                     verbose=True)
             print(optimizer)

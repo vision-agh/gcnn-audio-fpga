@@ -38,10 +38,6 @@ class GCN(Module):
     def forward(self, data):
         outputs = []
 
-        data.pos[:, 0] *= -50 # 1/radius_time [in seconds]
-        data.pos[:, 1] += 1/7 # radius_channel / num_channels
-        data.pos[:, 1] *= 7/2 # num_channels / (2*radius_channel)
-
         data.x = self.conv1(data)
         outputs.append(data.x)
         data.x = self.conv2(data)

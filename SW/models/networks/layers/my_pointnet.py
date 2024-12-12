@@ -135,6 +135,10 @@ class MyPointNetConv(MessagePassing):
     def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
 
+        msg[:, 0] *= -50 # 1/radius_time [in seconds]
+        msg[:, 1] += 1/7 # radius_channel / num_channels
+        msg[:, 1] *= 7/2 # num_channels / (2*radius_channel)
+
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
         if self.local_nn is not None:
@@ -143,6 +147,10 @@ class MyPointNetConv(MessagePassing):
 
     def message_calib(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
+
+        msg[:, 0] *= -50 # 1/radius_time [in seconds]
+        msg[:, 1] += 1/7 # radius_channel / num_channels
+        msg[:, 1] *= 7/2 # num_channels / (2*radius_channel)
 
         if x_j is not None:
             msg = torch.cat([x_j, msg], dim=1)
@@ -182,6 +190,10 @@ class MyPointNetConv(MessagePassing):
     
     def message_quant(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
         msg = pos_j - pos_i
+
+        msg[:, 0] *= -50 # 1/radius_time [in seconds]
+        msg[:, 1] += 1/7 # radius_channel / num_channels
+        msg[:, 1] *= 7/2 # num_channels / (2*radius_channel)
 
         '''
             Quantize input message, if first layer we need to quantize both x_j and pos differences
