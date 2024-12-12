@@ -5,18 +5,18 @@ import graph_pkg::*;
 module feature_gen #(
     parameter T_MULTIPLIER = GEN_MULTIPLIER_T,    
     parameter F_MULTIPLIER = GEN_MULTIPLIER_F,  
-    parameter ZERO_POINT = GEN_ZERO_POINT    
+    parameter ZERO_POINT   = GEN_ZERO_POINT    
                             
 )(
-    input logic clk,
-    input logic reset,
-    input event_type                          in_event,
-    input edge_type    [MAX_EDGES-1:0]                        in_edges,
+    input logic                      clk,
+    input logic                      reset,
+    input event_type                 in_event,
+    input edge_type   [MAX_EDGES-1:0] in_edges,
 
     output event_type                         out_event,
     output edge_type  [MAX_EDGES-1:0]         out_edges,
-    output logic            [PRECISION_GEN-1:0]     t_feature,
-    output logic            [PRECISION_GEN-1:0]     f_feature
+    output logic      [PRECISION_GEN-1:0]     t_feature,
+    output logic      [PRECISION_GEN-1:0]     f_feature
 );
     logic [$clog2(MAX_EDGES)-1 : 0]             num_edges;
     logic [$clog2(MAX_EDGES)-1 : 0]             counter,counter_reg;
@@ -29,9 +29,7 @@ module feature_gen #(
     logic dividend_tvalid,divisor_tvalid;
     
     assign edge_t = in_event.t - in_edges[counter].dt;
-    logic edge_f_valid;
     assign edge_f = (counter <= 10) ? in_event.f + counter*SKIP_STEP : in_event.f + (counter - MAX_EDGES)*SKIP_STEP ;
-    assign edge_f_valid = (0 <= edge_f && edge_f < 700) ? 1'b1 : 1'b0;
 
     assign out_event.t = in_event.t;
     assign out_event.f = in_event.f;
@@ -72,14 +70,14 @@ module feature_gen #(
                     dividend_tvalid <= 1;
                 end else begin
                     fin <= fin;
-                    divisor_tvalid  <= divisor_tvalid;
-                    dividend_tvalid <= dividend_tvalid;
+                    divisor_tvalid  <= 0;
+                    dividend_tvalid <= 0;
                 end
                 
                 if(in_edges[counter].is_connected && !fin) begin
                     num_edges <= num_edges + 1;
-                    t_temp  <= t_temp + ( edge_f_valid ? edge_t : '0);
-                    f_temp  <= f_temp + ( edge_f_valid ? edge_f : '0);
+                    t_temp  <= t_temp + edge_t;
+                    f_temp  <= f_temp + edge_f;
                 end else begin
                     num_edges <= num_edges;
                 end
@@ -98,8 +96,8 @@ module feature_gen #(
     assign temp_t_average = (extended_t_average * T_MULTIPLIER >>> PRECISION_GEN) + ZERO_POINT;
     assign temp_f_average = (extended_f_average * F_MULTIPLIER >>> PRECISION_GEN) + ZERO_POINT;
     //rounding
-    assign t_feature = temp_t_average[PRECISION_GEN-1] ? temp_t_average[16+:PRECISION_GEN] + 1 : temp_t_average[16+:PRECISION_GEN];
-    assign f_feature = temp_f_average[PRECISION_GEN-1] ? temp_f_average[16+:PRECISION_GEN] + 1 : temp_f_average[16+:PRECISION_GEN];
+    assign t_feature = temp_t_average[PRECISION_GEN-1] ? temp_t_average[PRECISION_GEN+:PRECISION_GEN] + 1 : temp_t_average[PRECISION_GEN+:PRECISION_GEN];
+    assign f_feature = temp_f_average[PRECISION_GEN-1] ? temp_f_average[PRECISION_GEN+:PRECISION_GEN] + 1 : temp_f_average[PRECISION_GEN+:PRECISION_GEN];
     
     div_t div_t ( //32 clock latency
         .aclk                   ( clk             ),
