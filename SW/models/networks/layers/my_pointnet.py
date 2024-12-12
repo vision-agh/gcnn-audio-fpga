@@ -110,7 +110,7 @@ class MyPointNetConv(MessagePassing):
         
         # Apply activation function
         if self.use_relu:
-            if self.calib_mode and not self.quantize_mode:
+            if not self.quantize_mode:
                 out = F.relu(out)
             else:
                 # In quantize mode, simulate quantized ReLU

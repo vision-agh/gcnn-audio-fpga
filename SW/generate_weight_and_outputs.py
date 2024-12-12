@@ -56,7 +56,7 @@ with open('model.txt', 'w') as f:
     for i, (x, pos) in enumerate(zip(data.x, data.pos)):
         t = pos[0]
         idx = pos[1]
-        ts = (t*1000000).round().item()
+        ts = (t*1000000+1e-3).round().item()
         ts = int(ts)
         idxs = int((idx*700).round().item())
 
@@ -66,9 +66,9 @@ with open('model.txt', 'w') as f:
         q_avg_t = model.conv1.observer_input.quantize_tensor(avg_t)
         q_avg_idx = model.conv1.observer_input.quantize_tensor(avg_idx)
 
-        f.write(f'EVENT = {ts} {idxs} Avg_T={int(q_avg_t.item())} ({avg_t*1000000}) Avg_Idx={int(q_avg_idx.item())} ({avg_idx*700})\n')
+        # f.write(f'EVENT = {ts} {idxs} Avg_T={int(q_avg_t.item())} ({avg_t*1000000}) Avg_Idx={int(q_avg_idx.item())} ({avg_idx*700})\n')
 
-        # f.write(f'EVENT = {ts} {idxs}\n')
+        f.write(f'EVENT = {ts} {idxs}\n')
         
         mask = data.edge_index[1, :] == i
         neighbour_pos = data.pos[data.edge_index[0, mask].T]

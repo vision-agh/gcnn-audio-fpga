@@ -17,6 +17,10 @@ def generate_edges(times: torch.Tensor,
     channel_last_event = [None] * 700
 
     for idx, (time, channel) in enumerate(zip(times, channels)):
+        
+        if time == 62378 or time==48615 or time==48614:
+            print(time, channel)
+            pass
 
         sum_t = 0
         sum_channel = 0
