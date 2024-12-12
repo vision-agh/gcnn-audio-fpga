@@ -48,8 +48,9 @@ def main():
                         deterministic=True)
 
 
-    trainer.fit(model, dm)
-    best_model_path = checkpoint_callback.best_model_path
+    # trainer.fit(model, dm)
+    # best_model_path = checkpoint_callback.best_model_path
+    best_model_path = "checkpoints/best_model_float-v17.ckpt"
     print(f"\nBest float model saved at: {best_model_path}\n")
     model = LNRecognition.load_from_checkpoint(best_model_path)
     trainer.test(model, datamodule=dm)
@@ -74,6 +75,9 @@ def main():
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=True)
     
+    model.lr = 1e-8
+    model.weight_decay = 0.0
+
     model.model.calibrate()
     trainer.fit(model, dm)
     best_model_path = checkpoint_callback.best_model_path
@@ -89,7 +93,7 @@ def main():
     model.model.quantize()
     trainer.test(model, datamodule=dm)
 
-    torch.save(model, 'checkpoints/best_model_quantized.ckpt')
+    torch.save(model.model, best_model_path.replace('calibrated', 'quantized'))
 
 
 if __name__ == '__main__':
