@@ -12,9 +12,7 @@ module edges_gen #(
     input event_type                          in_event,
 
     output event_type                         out_event,
-    output edge_type_before_quantize  [MAX_EDGES-1:0]         out_edges
-    //output logic            [T_WIDTH-1:0]     t_feature,
-    //output logic            [F_WIDTH-1:0]     f_feature
+    output edge_type  [MAX_EDGES-1:0]         out_edges
 );
     
     logic [$clog2(F_RADIUS):0] counter, counter_reg;
@@ -49,7 +47,7 @@ module edges_gen #(
     );
     logic                           rd_a, rd_b, wr_a, rd_a_reg, rd_b_reg;
     logic                           condition_a, condition_b, condition_a_reg, condition_b_reg;
-    edge_type_before_quantize [MAX_EDGES-1:0] edges_reg;
+    edge_type [MAX_EDGES-1:0] edges_reg;
 
     assign rd_a = ena & !wea;
     assign rd_b = enb & !wea;
