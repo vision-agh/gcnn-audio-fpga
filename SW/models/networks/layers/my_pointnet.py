@@ -59,7 +59,7 @@ class MyPointNetConv(MessagePassing):
         # Initialize quantization observers
         self.observer_input = Observer(num_bits=num_bits)
         self.observer_weight = Observer(num_bits=num_bits)
-        self.observer_output = Observer(num_bits=num_bits)
+        self.observer_output = Observer(num_bits=8)
 
         # Register buffers for quantization parameters
         self.register_buffer('m', torch.tensor(1.0, requires_grad=False))
@@ -218,7 +218,7 @@ class MyPointNetConv(MessagePassing):
         msg = msg + self.observer_output.zero_point   
 
         # Clamp output message
-        msg = torch.clamp(msg, 0, 2**self.num_bits-1)
+        msg = torch.clamp(msg, 0, 2**8-1)
         msg = msg.round()
 
         deq = self.observer_output.dequantize_tensor(msg)
