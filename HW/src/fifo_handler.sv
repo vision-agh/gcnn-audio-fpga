@@ -23,8 +23,19 @@ module fifo_handler #(
     assign din = {t, f};
     assign wen = !full && is_valid;
 
-    fifo_generator_0 fifo_0 (
-        .clk      ( clk        ),
+//    fifo_generator_0 fifo_0 (
+//        .clk      ( clk        ),
+//        .wr_en    ( wen       ),
+//        .din      ( din       ),
+//        .full     ( full      ),
+//        .rd_en    ( fifo_read ),
+//        .dout     ( dout      ),
+//        .empty    ( empty     )
+//    );
+    
+        //vck190
+    fifo_generator_0_0 fifo_0 (
+        .wr_clk   ( clk       ),
         .wr_en    ( wen       ),
         .din      ( din       ),
         .full     ( full      ),

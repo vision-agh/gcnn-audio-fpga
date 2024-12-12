@@ -6,8 +6,8 @@ module gen_from_file_ut;
 
     parameter MAX_X_COORD = 120;
     parameter MAX_Y_COORD = 100;
-    parameter INPUT_PATH = "/home/pwz/Documents/SAMOLOT/TEST_AUDIO/audio.txt";
-    parameter OUTPUT_PATH = "/home/pwz/Documents/SAMOLOT/TEST_AUDIO/OUTPUT_GRAPH.txt";
+    parameter INPUT_PATH = "/home/360/360.3-Stages/360.3.91-HN280727/audio.txt";
+    parameter OUTPUT_PATH = "/home/360/360.3-Stages/360.3.91-HN280727/OUTPUT_GRAPH.txt";
     parameter NS_PER_CLK = 5; // 250MHz is 4 clk every ns
     parameter TIME_WINDOW = 1000000; // We test only single time window
 
@@ -17,8 +17,8 @@ module gen_from_file_ut;
     event_type out_event;
     edge_type [MAX_EDGES-1:0] out_edges;
     logic empty;
-    logic [T_WIDTH-1:0] t_feature;
-    logic [F_WIDTH-1:0] f_feature;
+    logic [PRECISION_GEN-1:0] t_feature;
+    logic [PRECISION_GEN-1:0] f_feature;
     logic [T_WIDTH-1:0] t_feature_reg;
     logic [F_WIDTH-1:0] f_feature_reg;
 
@@ -90,20 +90,20 @@ module gen_from_file_ut;
             f <= f_feature_reg;
 
             // Write outputs to file
-//            if (pos_item.valid) begin
-//                $fdisplay(file_out, "%0d %0d %0d %0d", pos_item.x, pos_item.y, pos_item.t, pos_item.p);
-//                for (int i = 0; i < graph_pkg::MAX_EDGES; i=i+1) begin
-//                    if (edges[i].is_connected) begin
-//                        $fdisplay(file_out, "EDGE_%0d = %0d %0d %0d", i, edges[i].is_connected, edges[i].t, edges[i].attribute);
-//                    end                
-//                end
-//            end
+            if (out_event.valid) begin
+                $fdisplay(file_out, "EVENT = %0d %0d Avg_T=%0d Avg_Idx=%0d", out_event.t, out_event.f, t_feature, f_feature);
+                for (int i = 0; i < graph_pkg::MAX_EDGES; i=i+1) begin
+                    if (out_edges[i].is_connected) begin
+                        $fdisplay(file_out, "EDGE_%0d = %0d", i, out_edges[i].dt);
+                    end                
+                end
+            end
 
-//            // Finish simulation after 50.1 ms
-//            if (current_time_ns > 1500000) begin
-//                $fclose(file_out);
-//                $finish;
-//            end
+            // Finish simulation after 50.1 ms
+            if (current_time_ns > 20000000) begin
+                $fclose(file_out);
+                $finish;
+            end
         end
     end
 
@@ -114,9 +114,10 @@ module gen_from_file_ut;
         .f(f),
         .is_valid(is_valid),
         .out_event(out_event),
-        .out_edges(out_edges)
-        //.t_feature(t_feature),
-        //.f_feature(f_feature)
+        .out_edges(out_edges),
+        .t_feature(t_feature),
+        .f_feature(f_feature)
     );
 
 endmodule
+

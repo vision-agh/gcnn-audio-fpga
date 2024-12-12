@@ -7,13 +7,10 @@ package graph_pkg;
     parameter PRECISION_GEN  = 16;                    
     parameter PRECISION_CONV1  = 8;                    
 
-
     parameter T_WIDTH  = 20; //Max of 1000000
     parameter F_WIDTH  = 10; //Max of 700
     
     parameter NUM_CHANNEL = 700;
-    
-    parameter SCALE = 15;
 
     parameter INPUT_PARAMETER = 2; 
     
@@ -39,30 +36,21 @@ package graph_pkg;
     
     parameter SKIP_STEP = 10;
     
-//    typedef struct packed {
-//      logic signed [T_WIDTH-1 : 0] t;
-//      logic signed [F_WIDTH-1 : 0] f;
-//      logic signed [T_WIDTH-1 : 0] dt;
-//      logic signed [F_WIDTH-1 : 0] df;
-//      logic                      is_connected;
-//    } edge_type;
-    
     typedef struct packed {
-      logic signed [T_WIDTH -1: 0] t;
-      logic signed [F_WIDTH -1: 0] f;
-      logic                         valid;
+      logic [T_WIDTH -1: 0] t;
+      logic [F_WIDTH -1: 0] f;
+      logic                 valid;
     } event_type;
-    
-    typedef struct packed {
-      logic signed [T_WIDTH-1 : 0] dt;
-      logic                      is_connected;
-    } edge_type_before_quantize;
 
     parameter DELTA_T_WIDTH = 15; //max value of 20000
 
     typedef struct packed {
-      logic signed [PRECISION_GEN-1 : 0] dt;
-      logic                              is_connected;
+      logic [PRECISION_GEN-1 : 0] dt;
+      logic                       is_connected;
     } edge_type;
 
+
+    parameter GEN_MULTIPLIER_T = 4295;
+    parameter GEN_MULTIPLIER_F = 6135480;
+    parameter GEN_ZERO_POINT = '0;
 endpackage
