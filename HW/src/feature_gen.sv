@@ -39,7 +39,7 @@ module feature_gen #(
     always @(posedge clk) begin
         if (reset) begin
             num_edges <= '0; 
-            counter   <= '0;
+            counter   <= MAX_EDGES-1;
             t_temp    <= '0;
             f_temp    <= '0;
             counter_reg <= '0;
