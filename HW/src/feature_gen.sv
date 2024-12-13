@@ -80,7 +80,9 @@ module feature_gen #(
                     f_temp  <= f_temp + edge_f;
                 end else begin
                     num_edges <= num_edges;
-                end
+                    t_temp  <= t_temp;
+                    f_temp  <= f_temp;
+                end 
             end
         end
     end
@@ -92,7 +94,7 @@ module feature_gen #(
     
     assign extended_t_average = t_avg_valid && num_edges != 0 ? {{ $clog2(T_MULTIPLIER){1'b0} }, t_average} : '0;
     assign extended_f_average = f_avg_valid && num_edges != 0 ? {{ $clog2(F_MULTIPLIER){1'b0} }, f_average} : '0;
-    
+    //quantization
     assign temp_t_average = (extended_t_average * T_MULTIPLIER >>> PRECISION_GEN) + ZERO_POINT;
     assign temp_f_average = (extended_f_average * F_MULTIPLIER >>> PRECISION_GEN) + ZERO_POINT;
     //rounding
@@ -115,7 +117,7 @@ module feature_gen #(
         .s_axis_divisor_tvalid  ( divisor_tvalid  ),
         .s_axis_dividend_tdata  ( f_temp          ),//14bit
         .s_axis_dividend_tvalid ( dividend_tvalid ),
-        .m_axis_dout_tdata      ( f_average       ),//30~16 15~0
+        .m_axis_dout_tdata      ( f_average       ),//29~16 15~0
         .m_axis_dout_tvalid     ( f_avg_valid     )
     );
 
