@@ -12,7 +12,12 @@ module top #(
 
     output event_type                     out_event,
     output edge_type  [MAX_EDGES-1 : 0]   out_edges,
-    output logic [PRECISION_CONV1-1 :0]   out_features [OUTPUT_DIM_1-1 : 0]
+
+    // Convolution commented out for graph_gen tests
+    // output logic [PRECISION_CONV1-1 :0]   out_features [OUTPUT_DIM_1-1 : 0]
+
+    output logic    [PRECISION_GEN-1:0]   f_feature,
+    output logic    [PRECISION_GEN-1:0]   t_feature
 
 );
 
@@ -25,8 +30,9 @@ module top #(
     event_type                event_to_u_conv1, event_to_u_conv2, event_to_u_conv3, event_to_u_conv4;
     edge_type [MAX_EDGES-1:0] edges_to_u_conv1, edges_to_u_conv2, edges_to_u_conv3, edges_to_u_conv4;
 
-    logic      [PRECISION_GEN-1:0]   f_feature;
-    logic      [PRECISION_GEN-1:0]   t_feature;
+    // logic    [PRECISION_GEN-1:0]   f_feature;
+    // logic    [PRECISION_GEN-1:0]   t_feature;
+
     logic [PRECISION_CONV1-1 :0]     features_to_conv1 [INPUT_DIM_1-1 : 0];
 
     generate_graph u_gen_graph (
@@ -35,28 +41,31 @@ module top #(
         .t          ( t         ),
         .f          ( f         ),
         .is_valid   ( is_valid  ),
-        .out_event  ( event_to_u_conv1 ),
-        .out_edges  ( edges_to_u_conv1 ),
+        .out_event  ( out_event ),
+        .out_edges  ( out_edges ),
+        // .out_event  ( event_to_u_conv1 ),
+        // .out_edges  ( edges_to_u_conv1 ),
         .t_feature  ( t_feature ),
         .f_feature  ( f_feature )
     );
+
+    // Convolution commented out for graph_gen tests
+    // assign features_to_conv1[0] = t_feature;
+    // assign features_to_conv1[1] = f_feature;   
     
-    assign features_to_conv1[0] = t_feature;
-    assign features_to_conv1[1] = f_feature;   
-    
-     convolution #(
-         .INPUT_DIM  ( INPUT_DIM_1         ),
-         .OUTPUT_DIM ( OUTPUT_DIM_1        )
-     ) u_conv1 (
-         .clk          ( clk                 ),
-         .reset        ( reset               ),
-         .in_event     ( event_to_u_conv1    ),
-         .in_edges     ( edges_to_u_conv1    ),
-         .in_features  ( features_to_conv1   ),
-         .out_event    ( out_event           ),
-         .out_edges    ( out_edges           ),
-         .out_features ( out_features        )
-     );
+    //  convolution #(
+    //      .INPUT_DIM  ( INPUT_DIM_1         ),
+    //      .OUTPUT_DIM ( OUTPUT_DIM_1        )
+    //  ) u_conv1 (
+    //      .clk          ( clk                 ),
+    //      .reset        ( reset               ),
+    //      .in_event     ( event_to_u_conv1    ),
+    //      .in_edges     ( edges_to_u_conv1    ),
+    //      .in_features  ( features_to_conv1   ),
+    //      .out_event    ( out_event           ),
+    //      .out_edges    ( out_edges           ),
+    //      .out_features ( out_features        )
+    //  );
 
     // MULTIPLE CONVOLUTIONS
 
