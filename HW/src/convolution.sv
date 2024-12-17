@@ -1,0 +1,303 @@
+`timescale 1ns / 1ps
+
+import graph_pkg::*;
+
+module convolution #(
+    parameter int PRECISION                  = graph_pkg::PRECISION_CONV1,
+    parameter int INPUT_DIM                  = 2,
+    parameter int OUTPUT_DIM                 = 64,
+    parameter int MULTIPLIER_DIFF_T          = 214742, //good
+    parameter int ZERO_POINT_IN              = 0,  //good
+    parameter int ZERO_POINT_OUT             = 36533, //good
+    parameter int MULTIPLIER_OUT             = 58670, //good
+    parameter int ZERO_POINT_WEIGHT          = 0,
+    parameter string INIT_PATH               = "???",
+    parameter logic [15:0] SCALE_IN [20:0]   = { 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
+                                                 62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
+)(
+    input logic clk,
+    input logic reset,
+    input event_type                   in_event,
+    input edge_type  [MAX_EDGES-1:0]   in_edges,
+    input logic [PRECISION-1 :0]       in_features [INPUT_DIM-1 : 0],
+
+    output event_type                  out_event,
+    output edge_type  [MAX_EDGES-1:0]  out_edges,
+    output logic [PRECISION-1 :0]      out_features [OUTPUT_DIM-1 : 0]
+);
+
+    logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read, counter_quant, counter_mulin;
+    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter, outdim_counter_reg;
+    event_type in_event_reg; // fifo output
+    edge_type[MAX_EDGES-1:0] in_edges_reg;
+    typedef logic [PRECISION-1 :0] features_type [INPUT_DIM-1 : 0];
+    typedef logic [(PRECISION*INPUT_DIM)-1 :0] memory_type;
+    features_type in_features_reg;
+
+    localparam IDLE = 2'd0;
+    localparam CONV = 2'd1;
+    
+    localparam AWIDTH = $clog2(NUM_CHANNEL);
+    localparam DWIDTH = INPUT_DIM * PRECISION;
+    logic state = IDLE;
+    logic state_reg = IDLE;
+
+    /////////////////////////////////////////////////////////////////
+    //                        Handle MEMORY                        //
+    /////////////////////////////////////////////////////////////////
+
+    // Memory interface signals
+    logic [AWIDTH-1:0] addra, addrb;
+    logic [DWIDTH-1:0] dinb, douta, doutb;
+    logic ena, wea, web, enb, ena_reg, enb_reg, web_reg;
+
+    // Context memory instantiation
+    memory #(
+        .AWIDTH   ( AWIDTH  ),
+        .DWIDTH   ( DWIDTH  ),
+        .RAM_TYPE ( "block" )
+    ) gen_memory (
+        .clk      ( clk   ),
+        .mem_ena  ( ena   ),    // READ only on PORTA
+        .wea      ( wea   ),
+        .addra    ( addra ),
+        .dina     ( '0    ),
+        .dinb     ( dinb  ),
+        .douta    ( douta ),
+        .mem_enb  ( enb   ),    // Write on last 
+        .web      ( web   ),
+        .addrb    ( addrb ),
+        .doutb    ( doutb )
+    );
+
+    logic condition_a, condition_b, condition_a_reg, condition_b_reg;
+    edge_type [MAX_EDGES-1:0] edges_reg;
+
+    assign ena  = (counter_reg <= F_RADIUS && condition_a && state_reg==CONV) ? 1'b1 : 1'b0;
+    assign enb  = (counter_reg <= F_RADIUS && condition_b && state_reg==CONV) ? 1'b1 : web;
+    assign wea  = 0;
+    assign dinb = memory_type'(in_features_reg);
+    assign web  = (counter_reg == F_RADIUS) && state_reg==CONV && outdim_counter_reg==0;
+
+    assign addra = in_event_reg.f + counter_reg*SKIP_STEP;
+    assign addrb = in_event_reg.f - 100 + (counter_reg*SKIP_STEP);
+
+    assign condition_a = in_edges[counter_reg].is_connected;
+    assign condition_b = (counter_reg < F_RADIUS) ? in_edges[F_RADIUS+1+counter_reg].is_connected : 1'b0;
+
+    logic [26-1 : 0] t_temp;
+    logic start;
+    logic [18-1 : 0] f_temp;
+    logic [$clog2(MAX_EDGES)-1 : 0]             num_edges;
+
+    // Counter and edge processing
+    always @(posedge clk) begin
+        if (reset) begin
+            state <= IDLE;
+            start <= '0;
+            ena_reg <= '0;
+            enb_reg <= '0;
+            web_reg <= '0;
+            out_event.valid <= '0;
+            counter <= F_RADIUS;
+            outdim_counter <= OUTPUT_DIM/2;
+        end else begin
+            if (state == CONV) begin
+                outdim_counter <= outdim_counter + 1;
+            end
+            if (counter < F_RADIUS && state==CONV && outdim_counter == (OUTPUT_DIM/2)-1) begin
+                counter <= counter + 1;
+                outdim_counter <= '0;
+            end
+            if (in_event.valid) begin
+                counter <= '0;
+                outdim_counter <= '0;
+                state <= CONV;
+                in_event_reg <= in_event;
+                in_edges_reg <= in_edges;
+                in_features_reg <= in_features;
+            end
+            if (counter_reg == F_RADIUS && counter == F_RADIUS && state == CONV && outdim_counter == (OUTPUT_DIM/2)-1) begin
+                state <= IDLE;
+                start <= '1;
+            end
+            if (state == IDLE) begin
+                if (start == 1) begin
+                    out_edges <= in_edges_reg;
+                    out_event <= in_event_reg;
+                    start <= '0;
+                end
+                else begin
+                    out_event.valid <= '0;
+                end
+            end
+            enb_reg <= enb;
+            ena_reg <= ena;
+            web_reg <= web;
+
+            state_reg <= state;
+            outdim_counter_reg <= outdim_counter;
+            counter_reg <= counter;
+            counter_read <= counter_reg;
+            counter_quant <= counter_read;
+            counter_mulin <= counter_quant;
+        end
+    end
+
+    /////////////////////////////////////////////////////////////////
+    //                      Quantize inputs                        //
+    /////////////////////////////////////////////////////////////////
+
+    logic signed [PRECISION:0]   features_a_temp [INPUT_DIM+1:0];
+    logic signed [PRECISION:0]   features_b_temp [INPUT_DIM+1:0];
+    logic signed [PRECISION:0]   features_a [INPUT_DIM+1:0];
+    logic signed [PRECISION:0]   features_b [INPUT_DIM+1:0];
+
+    genvar a, b;
+    generate
+        for (a = 0; a < INPUT_DIM; a++) begin : port_a_assign
+            always @(posedge clk) begin
+                features_a_temp[a][PRECISION-1 : 0] = {douta[((PRECISION)*(a+1))-1 : (PRECISION*a)]};
+                features_a_temp[a][PRECISION] = 0;
+                features_a[a] <= ena_reg ? features_a_temp[a]-ZERO_POINT_IN : '0;
+            end
+        end
+        for (b = 0; b < INPUT_DIM; b++) begin : port_b_assign
+            always @(posedge clk) begin
+                features_b_temp[b][PRECISION-1 : 0] = !web_reg ? {doutb[((PRECISION)*(b+1))-1 : (PRECISION*b)]}
+                                                               : in_features_reg[b];
+                features_b_temp[b][PRECISION] = 0;
+                features_b[b] <= enb_reg ? features_b_temp[b]-ZERO_POINT_IN : '0;
+            end
+        end       
+    endgenerate
+
+    always @(posedge clk) begin
+        features_a[INPUT_DIM] <= ena_reg ? ((in_edges_reg[counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
+        features_a[INPUT_DIM+1] <= ena_reg ? SCALE_IN[counter_read] : '0;
+        features_b[INPUT_DIM] <= (enb_reg && counter_read < F_RADIUS) ? ((in_edges_reg[F_RADIUS+1+counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
+        features_b[INPUT_DIM+1] <= (enb_reg && counter_read < F_RADIUS) ? SCALE_IN[F_RADIUS+1+counter_read] : '0;
+    end
+
+    /////////////////////////////////////////////////////////////////
+    //                   Perform multiplications                   //
+    /////////////////////////////////////////////////////////////////
+
+    //Prepare weights
+    localparam WEIGHT_WIDTH = ((INPUT_DIM+2)*(PRECISION))+32; //bias
+    logic [WEIGHT_WIDTH-1 : 0] weight_mem1;
+    logic [WEIGHT_WIDTH-1 : 0] weight_mem2;
+    logic signed [PRECISION:0] single_weight1_reg [INPUT_DIM+1:0];
+    logic signed [31:0]        single_bias1_reg;
+    logic signed [PRECISION:0] single_weight1 [INPUT_DIM+1:0];
+    logic signed [31:0]        single_bias1;
+    logic signed [PRECISION:0] single_weight2_reg [INPUT_DIM+1:0];
+    logic signed [31:0]        single_bias2_reg;
+    logic signed [PRECISION:0] single_weight2 [INPUT_DIM+1:0];
+    logic signed [31:0]        single_bias2;
+
+    dual_port_memory_weights #(
+        .AWIDTH   ( $clog2(OUTPUT_DIM)           ),
+        .DWIDTH   ( (PRECISION*(INPUT_DIM+2))+32 ),
+        .STEP     ( 32                           ),
+        .RAM_TYPE ( "block"                      ),
+        .INIT_PATH ( INIT_PATH                   )
+    ) weights_memory   (
+        .clk      ( clk      ),
+        .en       ( state == CONV   ),
+        .addr     ( outdim_counter  ),
+        .dout1    ( weight_mem1     ),
+        .dout2    ( weight_mem2     )
+    );
+
+    genvar w;
+    generate
+        for (w = 0; w < INPUT_DIM+2; w++) begin : weights_assign
+            always @(posedge clk) begin
+                single_weight1_reg[w] <= weight_mem1[(((PRECISION)*(w+1))-1)+32 : ((PRECISION)*w)+32] - ZERO_POINT_WEIGHT;
+                single_weight2_reg[w] <= weight_mem2[(((PRECISION)*(w+1))-1)+32 : ((PRECISION)*w)+32] - ZERO_POINT_WEIGHT;
+            end
+        end
+    endgenerate
+
+    always @(posedge clk) begin
+        single_bias1_reg <= weight_mem1[31:0];
+        single_bias2_reg <= weight_mem2[31:0];
+        single_weight1 <= single_weight1_reg;
+        single_bias1 <= single_bias1_reg;
+        single_weight2 <= single_weight2_reg;
+        single_bias2 <= single_bias2_reg;
+    end
+
+    logic [PRECISION-1:0] output_mat_a1;
+    logic [PRECISION-1:0] output_mat_a2;
+    logic [PRECISION-1:0] output_mat_b1;
+    logic [PRECISION-1:0] output_mat_b2;
+
+    vector_multiplication #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .MULTIPLIER        ( MULTIPLIER_OUT ),
+        .ZERO_POINT        ( ZERO_POINT_OUT ),
+        .PRECISION         ( PRECISION      )
+    ) mul_a_1 (
+        .clk             ( clk             ),
+        .reset           ( reset           ),
+        .feature_matrix  ( features_a      ),
+        .weight_matrix   ( single_weight1  ),
+        .bias            ( single_bias1    ),
+        .output_matrix   ( output_mat_a1   )
+    );
+
+    vector_multiplication #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .MULTIPLIER        ( MULTIPLIER_OUT ),
+        .ZERO_POINT        ( ZERO_POINT_OUT ),
+        .PRECISION         ( PRECISION      )
+    ) mul_a_2 (
+        .clk             ( clk             ),
+        .reset           ( reset           ),
+        .feature_matrix  ( features_a      ),
+        .weight_matrix   ( single_weight2  ),
+        .bias            ( single_bias2    ),
+        .output_matrix   ( output_mat_a2   )
+    );
+
+    vector_multiplication #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .MULTIPLIER        ( MULTIPLIER_OUT ),
+        .ZERO_POINT        ( ZERO_POINT_OUT ),
+        .PRECISION         ( PRECISION      )
+    ) mul_b_1 (
+        .clk             ( clk             ),
+        .reset           ( reset           ),
+        .feature_matrix  ( features_b      ),
+        .weight_matrix   ( single_weight1  ),
+        .bias            ( single_bias1    ),
+        .output_matrix   ( output_mat_b1   )
+    );
+
+    vector_multiplication #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .MULTIPLIER        ( MULTIPLIER_OUT ),
+        .ZERO_POINT        ( ZERO_POINT_OUT ),
+        .PRECISION         ( PRECISION      )
+    ) mul_b_2 (
+        .clk             ( clk             ),
+        .reset           ( reset           ),
+        .feature_matrix  ( features_b      ),
+        .weight_matrix   ( single_weight2  ),
+        .bias            ( single_bias2    ),
+        .output_matrix   ( output_mat_b2   )
+    );
+
+    // synthesis translate_off
+    always @(posedge clk) begin
+        if (state != IDLE && in_event.valid) begin
+            $display("DECREASE THE FIFO THROUGHPUT");
+            $stop;
+        end
+    end
+    // synthesis translate_on
+
+endmodule
+
