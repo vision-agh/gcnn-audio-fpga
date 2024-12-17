@@ -4,16 +4,16 @@ import graph_pkg::*;
 
 module generate_graph #(
 )( 
-    input  logic                              clk,
-    input  logic                              reset,
-    input  logic            [T_WIDTH-1: 0]    t,
-    input  logic            [F_WIDTH-1: 0]    f,
-    input  logic                              is_valid,
+    input  logic                          clk,
+    input  logic                          reset,
+    input  logic      [T_WIDTH-1: 0]      t,
+    input  logic      [F_WIDTH-1: 0]      f,
+    input  logic                          is_valid,
 
-    output event_type                         out_event,
-    output edge_type        [MAX_EDGES-1 : 0] out_edges,
-    output logic            [PRECISION_GEN-1:0]     t_feature,
-    output logic            [PRECISION_GEN-1:0]     f_feature
+    output event_type                     out_event,
+    output edge_type  [MAX_EDGES-1 : 0]   out_edges,
+    output logic      [PRECISION_GEN-1:0] t_feature,
+    output logic      [PRECISION_GEN-1:0] f_feature
 );
 
     event_type event_to_edges_gen,event_to_feature_gen;
