@@ -20,71 +20,38 @@ module average #(
     logic [PRECISION+T_WIDTH-1:0]    temp_feature [OUTPUT_DIM-1:0];
     logic [PRECISION+T_WIDTH-1:0]    dividend_feature;  
     logic [$clog2(OUTPUT_DIM)-1:0]   counter;
-    logic                            divisor_tvalid;
-    logic [OUTPUT_DIM-1:0]           temp_out_feature;
+    logic [31:0]                     temp_out_feature;
     logic [N_WIDTH-1:0]              n_counter;
     logic                            done;
-    logic                            data_input_finished_reg;
-    
-    always @(posedge clk) begin
-        if(reset) begin
-            data_input_finished_reg <= 0;
-        end else if(data_input_finished) begin
-            data_input_finished_reg <= 1;
-        end else begin
-            data_input_finished_reg <= data_input_finished_reg;
-        end
-    end
-    
-    assign done = data_input_finished_reg;
-    
+        
     always @(posedge clk) begin
         if(reset) begin
             n_counter <= 0;
+            done <= '0;
+            counter <= 0;
         end else begin
             if(in_event_valid) begin
                 n_counter <= n_counter + 1;
-            end else begin
-                n_counter <= n_counter;
+                if(data_input_finished) begin
+                    done <= 1'b1;
+                end
+            end
+            if (done && counter < OUTPUT_DIM) begin
+                counter <= counter+1;
+            end
+            if (counter == OUTPUT_DIM-1) begin
+                done <= '0;
             end
         end    
     end
-    
-    logic done_reg;
-    
-    always @(posedge clk) begin
-        if(reset) begin
-            done_reg <= 0;
-        end else begin
-            done_reg <= done;
-        end
-    end
-    
-    always @(posedge clk) begin
-        if (reset) begin
-            counter <= 0;
-            divisor_tvalid <= 0;
-        end else begin
-            if (done && !done_reg) begin
-                counter <= 0;
-                divisor_tvalid <= 1;
-            end else if (counter == OUTPUT_DIM-1) begin
-                counter <= counter;
-                divisor_tvalid <= 0;
-            end else if (done && done_reg) begin
-                counter <= counter + 1;
-                divisor_tvalid <= 1;
-            end
-        end
-    end
-    
+      
     assign dividend_feature = temp_feature[counter];
     
     genvar i;
     generate for(i=0;i<OUTPUT_DIM; i++) begin
         always @(posedge clk) begin
             if(reset) begin
-                    temp_feature[i] <= '0; 
+               temp_feature[i] <= '0; 
             end else begin
                 if(in_event_valid) begin
                     temp_feature[i] <= temp_feature[i] + in_features[i]; 
@@ -94,7 +61,7 @@ module average #(
         end
     endgenerate
     
-    assign out_feature = temp_out_feature[30:2];
+    assign out_feature = temp_out_feature[9:2];
     
     always @(posedge clk) begin
         if(reset) begin
@@ -111,9 +78,9 @@ module average #(
     div_gen_0 divider ( //1clock latency
         .aclk (clk),
         .s_axis_divisor_tdata   ( n_counter        ),//14bit
-        .s_axis_divisor_tvalid  ( divisor_tvalid   ),
+        .s_axis_divisor_tvalid  ( done             ),
         .s_axis_dividend_tdata  ( dividend_feature ),//29bit(21 + 8)
-        .s_axis_dividend_tvalid ( divisor_tvalid   ),
+        .s_axis_dividend_tvalid ( done             ),
         .m_axis_dout_tdata      ( temp_out_feature ),//30~2, 1~0 fixed point
         .m_axis_dout_tvalid     ( out_valid        )
     );
