@@ -14,8 +14,8 @@ module vector_multiplication #(
     output logic        [PRECISION-1:0] output_matrix  
 );
 
-    localparam PARALLEL = INPUT_DIM / 4;
-
+    localparam PARALLEL = INPUT_DIM / 2;
+    //32+4
     logic signed [63:0]        matrix_result [PARALLEL : 0];
     logic signed [63:0]        matrix_result_reg [PARALLEL : 0];
     logic signed [63:0]        debug_bias ;
@@ -27,7 +27,7 @@ module vector_multiplication #(
         for (p = 0; p < PARALLEL; p++) begin : multiply
             always @(posedge clk) begin
                 matrix_result[p] = 0;
-                for (int j=(4*p); j<(4*(p+1)); j=j+1) begin: cols
+                for (int j=(2*p); j<(2*(p+1)); j=j+1) begin: cols
                     matrix_result[p] = matrix_result[p] + (feature_matrix[j] * weight_matrix[j]);
                 end
                 matrix_result_reg[p] <= matrix_result[p];
@@ -36,16 +36,8 @@ module vector_multiplication #(
     endgenerate
 
     always @(posedge clk) begin
-        matrix_result[PARALLEL] = 0;
-        for (int j=INPUT_DIM-3; j<INPUT_DIM; j=j+1) begin: cols
-            matrix_result[PARALLEL] = matrix_result[PARALLEL] + (feature_matrix[j] * weight_matrix[j]);
-        end
-        matrix_result_reg[PARALLEL] <= matrix_result[PARALLEL];
-    end
-
-    always @(posedge clk) begin
         debug_bias = bias_reg;
-        for (int i=0; i<= PARALLEL; i++) begin
+        for (int i=0; i< PARALLEL; i++) begin
             debug_bias = debug_bias + matrix_result_reg[i];
         end
         debug_mul <= debug_bias;
