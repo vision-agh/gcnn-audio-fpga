@@ -10,9 +10,9 @@ module convolution #(
     parameter int ZERO_POINT_IN              = 0,  //good
     parameter int ZERO_POINT_OUT             = 36533, //good
     parameter int MULTIPLIER_OUT             = 58670, //good
-    parameter int ZERO_POINT_WEIGHT          = 0,
+    parameter int ZERO_POINT_WEIGHT          = 30075,
     parameter string INIT_PATH               = "???",
-    parameter logic [15:0] SCALE_IN [20:0]   = { 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
+    parameter logic [15:0] SCALE_IN [21:0]   = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
                                                  62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
 )(
     input logic clk,
@@ -26,10 +26,14 @@ module convolution #(
     output logic [PRECISION-1 :0]      out_features [OUTPUT_DIM-1 : 0]
 );
 
-    logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read, counter_quant, counter_mulin;
-    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter, outdim_counter_reg;
+    logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read, counter_quant;
+    logic [$clog2(F_RADIUS):0] counter_quant, counter_mul1, counter_mul2, counter_mul_out, counter_compare, counter_acc;
+    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter, outdim_counter_reg, outdim_counter_read, outdim_counter_quant;
+    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter_mul1, outdim_counter_mul2, outdim_counter_mul_out, outdim_counter_compare, outdim_counter_acc;
     event_type in_event_reg; // fifo output
     edge_type[MAX_EDGES-1:0] in_edges_reg;
+    event_type out_event_reg; // fifo output
+    edge_type[MAX_EDGES-1:0] out_edges_reg;
     typedef logic [PRECISION-1 :0] features_type [INPUT_DIM-1 : 0];
     typedef logic [(PRECISION*INPUT_DIM)-1 :0] memory_type;
     features_type in_features_reg;
@@ -50,6 +54,7 @@ module convolution #(
     logic [AWIDTH-1:0] addra, addrb;
     logic [DWIDTH-1:0] dinb, douta, doutb;
     logic ena, wea, web, enb, ena_reg, enb_reg, web_reg;
+    logic ena_quant, enb_quant, ena_mul1, enb_mul1, ena_mul2, enb_mul2, ena_mul_out, enb_mul_out;
 
     // Context memory instantiation
     memory #(
@@ -77,7 +82,7 @@ module convolution #(
     assign enb  = (counter_reg <= F_RADIUS && condition_b && state_reg==CONV) ? 1'b1 : web;
     assign wea  = 0;
     assign dinb = memory_type'(in_features_reg);
-    assign web  = (counter_reg == F_RADIUS) && state_reg==CONV && outdim_counter_reg==0;
+    assign web  = (counter_reg == F_RADIUS) && state_reg==CONV;// && outdim_counter_reg==0;
 
     assign addra = in_event_reg.f + counter_reg*SKIP_STEP;
     assign addrb = in_event_reg.f - 100 + (counter_reg*SKIP_STEP);
@@ -123,24 +128,48 @@ module convolution #(
             end
             if (state == IDLE) begin
                 if (start == 1) begin
-                    out_edges <= in_edges_reg;
-                    out_event <= in_event_reg;
+                    out_edges_reg <= in_edges_reg;
+                    out_event_reg <= in_event_reg;
                     start <= '0;
                 end
                 else begin
-                    out_event.valid <= '0;
+                    out_event_reg.valid <= '0;
                 end
             end
-            enb_reg <= enb;
-            ena_reg <= ena;
-            web_reg <= web;
+            //if (counter_reg != counter_read) begin
+                enb_reg <= enb;
+                ena_reg <= ena;
+                web_reg <= web;
+            //end
+            ena_quant <= ena_reg;
+            ena_mul1 <= ena_quant;
+            ena_mul2 <= ena_mul1;
+            ena_mul_out <= ena_mul2;
+            
+            enb_quant <= enb_reg;
+            enb_mul1 <= enb_quant;
+            enb_mul2 <= enb_mul1;
+            enb_mul_out <= enb_mul2;
 
             state_reg <= state;
+
             outdim_counter_reg <= outdim_counter;
+            outdim_counter_read <= outdim_counter_reg;
+            outdim_counter_quant <= outdim_counter_read;
+            outdim_counter_mul1 <= outdim_counter_quant;
+            outdim_counter_mul2 <= outdim_counter_mul1;
+            outdim_counter_mul_out <= outdim_counter_mul2;
+            outdim_counter_compare <= outdim_counter_mul_out;
+            outdim_counter_acc <= outdim_counter_compare;
+
             counter_reg <= counter;
             counter_read <= counter_reg;
             counter_quant <= counter_read;
-            counter_mulin <= counter_quant;
+            counter_mul1 <= counter_quant;
+            counter_mul2 <= counter_mul1;
+            counter_mul_out <= counter_mul2;
+            counter_compare <= counter_mul_out;
+            counter_acc <= counter_compare;
         end
     end
 
@@ -148,8 +177,8 @@ module convolution #(
     //                      Quantize inputs                        //
     /////////////////////////////////////////////////////////////////
 
-    logic signed [PRECISION:0]   features_a_temp [INPUT_DIM+1:0];
-    logic signed [PRECISION:0]   features_b_temp [INPUT_DIM+1:0];
+    logic signed [PRECISION:0]   features_a_temp [1:0];
+    logic signed [PRECISION:0]   features_b_temp [1:0];
     logic signed [PRECISION:0]   features_a [INPUT_DIM+1:0];
     logic signed [PRECISION:0]   features_b [INPUT_DIM+1:0];
 
@@ -159,7 +188,7 @@ module convolution #(
             always @(posedge clk) begin
                 features_a_temp[a][PRECISION-1 : 0] = {douta[((PRECISION)*(a+1))-1 : (PRECISION*a)]};
                 features_a_temp[a][PRECISION] = 0;
-                features_a[a] <= ena_reg ? features_a_temp[a]-ZERO_POINT_IN : '0;
+                features_a[a+2] <= ena_reg ? features_a_temp[a]-ZERO_POINT_IN : '0;
             end
         end
         for (b = 0; b < INPUT_DIM; b++) begin : port_b_assign
@@ -167,16 +196,16 @@ module convolution #(
                 features_b_temp[b][PRECISION-1 : 0] = !web_reg ? {doutb[((PRECISION)*(b+1))-1 : (PRECISION*b)]}
                                                                : in_features_reg[b];
                 features_b_temp[b][PRECISION] = 0;
-                features_b[b] <= enb_reg ? features_b_temp[b]-ZERO_POINT_IN : '0;
+                features_b[b+2] <= enb_reg ? features_b_temp[b]-ZERO_POINT_IN : '0;
             end
         end       
     endgenerate
 
     always @(posedge clk) begin
-        features_a[INPUT_DIM] <= ena_reg ? ((in_edges_reg[counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
-        features_a[INPUT_DIM+1] <= ena_reg ? SCALE_IN[counter_read] : '0;
-        features_b[INPUT_DIM] <= (enb_reg && counter_read < F_RADIUS) ? ((in_edges_reg[F_RADIUS+1+counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
-        features_b[INPUT_DIM+1] <= (enb_reg && counter_read < F_RADIUS) ? SCALE_IN[F_RADIUS+1+counter_read] : '0;
+        features_a[1] <= ena_reg ? ((in_edges_reg[counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
+        features_a[0] <= ena_reg ? SCALE_IN[counter_read] : '0;
+        features_b[1] <= (enb_reg && counter_read < F_RADIUS) ? ((in_edges_reg[F_RADIUS+1+counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
+        features_b[0] <= (enb_reg) ? SCALE_IN[F_RADIUS+1+counter_read] : '0;
     end
 
     /////////////////////////////////////////////////////////////////
@@ -233,7 +262,13 @@ module convolution #(
     logic [PRECISION-1:0] output_mat_a2;
     logic [PRECISION-1:0] output_mat_b1;
     logic [PRECISION-1:0] output_mat_b2;
+    logic [PRECISION-1:0] output_mat_a_full [OUTPUT_DIM-1:0];
+    logic [PRECISION-1:0] output_mat_b_full [OUTPUT_DIM-1:0];
+    logic [PRECISION-1:0] output_mat_full [OUTPUT_DIM-1:0];
+    logic [PRECISION-1:0] output_features [OUTPUT_DIM-1:0];
 
+
+    //Handle multiplications and outputs
     vector_multiplication #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
@@ -290,9 +325,52 @@ module convolution #(
         .output_matrix   ( output_mat_b2   )
     );
 
+    always @(posedge clk) begin
+        output_mat_a_full[outdim_counter_mul_out] <= ena_mul_out ? output_mat_a1 : '0;
+        output_mat_a_full[outdim_counter_mul_out+32] <= ena_mul_out ? output_mat_a2 : '0;
+        output_mat_b_full[outdim_counter_mul_out] <= enb_mul_out ? output_mat_b1 : '0;
+        output_mat_b_full[outdim_counter_mul_out+32] <= enb_mul_out ? output_mat_b2 : '0;
+    end
+
+    always @(posedge clk) begin
+        output_mat_full[outdim_counter_compare] <= output_mat_a_full[outdim_counter_compare] > output_mat_b_full[outdim_counter_compare] ? output_mat_a_full[outdim_counter_compare]
+                                                                                                                                   : output_mat_b_full[outdim_counter_compare];
+        output_mat_full[outdim_counter_compare+32] <= output_mat_a_full[outdim_counter_compare+32] > output_mat_b_full[outdim_counter_compare+32] ? output_mat_a_full[outdim_counter_compare+32]
+                                                                                                                                   : output_mat_b_full[outdim_counter_compare+32];
+
+        if (outdim_counter_acc == 0 && counter_acc == 0) begin
+            output_features <= '{default:ZERO_POINT_OUT};;
+            output_features[outdim_counter_acc] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc];
+            output_features[outdim_counter_acc+32] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc+32] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc+32];
+        end
+        else begin
+            output_features[outdim_counter_acc] <= output_features[outdim_counter_acc] > output_mat_full[outdim_counter_acc] ? output_features[outdim_counter_acc] : output_mat_full[outdim_counter_acc];
+            output_features[outdim_counter_acc+32] <= output_features[outdim_counter_acc+32] > output_mat_full[outdim_counter_acc+32] ? output_features[outdim_counter_acc+32] : output_mat_full[outdim_counter_acc+32];
+        end
+        out_features <= output_features;
+    end
+
+    delay_module #(
+        .N        ( 31 ),
+        .DELAY    ( 8  )
+    ) delay_event (
+        .clk   ( clk     ),
+        .idata ( {out_event_reg} ),
+        .odata ( {out_event}     )
+    );
+
+    delay_module #(
+        .N        ( 357 ),
+        .DELAY    ( 10  )
+    ) delay_edge (
+        .clk   ( clk     ),
+        .idata ( {out_edges_reg} ),
+        .odata ( {out_edges}     )
+    );
+
     // synthesis translate_off
     always @(posedge clk) begin
-        if (state != IDLE && in_event.valid) begin
+        if (state_reg != IDLE && in_event.valid) begin
             $display("DECREASE THE FIFO THROUGHPUT");
             $stop;
         end
