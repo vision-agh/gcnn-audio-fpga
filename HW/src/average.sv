@@ -3,18 +3,18 @@
 import graph_pkg::*;
 
 module average #(
-    parameter int OUTPUT_DIM = OUTPUT_DIM_4
+    parameter int OUTPUT_DIM = OUTPUT_DIM_4,
+    parameter int PRECISION = PRECISION_CONV4,
+    parameter int N_WIDTH = 20
 )(
-    input  logic                                   clk,
-    input  logic                                   reset,
-    input  logic                                   in_event_valid,
-    input  logic      [PRECISION-1:0]              in_features [OUTPUT_DIM-1:0],
-    input  logic      [N_WIDTH-1 : 0]              n,
-    input  logic                                   empty,
-    input  logic                                   data_input_finished,
-    output logic      [$clog2(OUTPUT_DIM)-1: 0]    out_address, 
-    output logic      [PRECISION-1:0]              out_feature,
-    output logic                                   out_valid
+    input  logic                               clk,
+    input  logic                               reset,
+    input  logic                               in_event_valid,
+    input  logic  [PRECISION-1:0]              in_features [OUTPUT_DIM-1:0],
+    input  logic                               data_input_finished,
+    output logic  [$clog2(OUTPUT_DIM)-1: 0]    out_address, 
+    output logic  [PRECISION-1:0]              out_feature,
+    output logic                               out_valid
 
 );
     logic [PRECISION+T_WIDTH-1:0]    temp_feature [OUTPUT_DIM-1:0];
@@ -36,7 +36,7 @@ module average #(
         end
     end
     
-    assign done = empty && n == n_counter && data_input_finished_reg;
+    assign done = data_input_finished_reg;
     
     always @(posedge clk) begin
         if(reset) begin
@@ -107,11 +107,10 @@ module average #(
             end
         end
     end
-    
-    
+
     div_gen_0 divider ( //1clock latency
         .aclk (clk),
-        .s_axis_divisor_tdata   ( n                ),//14bit
+        .s_axis_divisor_tdata   ( n_counter        ),//14bit
         .s_axis_divisor_tvalid  ( divisor_tvalid   ),
         .s_axis_dividend_tdata  ( dividend_feature ),//29bit(21 + 8)
         .s_axis_dividend_tvalid ( divisor_tvalid   ),

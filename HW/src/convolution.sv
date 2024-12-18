@@ -3,7 +3,8 @@
 import graph_pkg::*;
 
 module convolution #(
-    parameter int PRECISION                  = graph_pkg::PRECISION_CONV1,
+    parameter int PRECISION_IN               = graph_pkg::PRECISION_CONV1,
+    parameter int PRECISION_OUT              = graph_pkg::PRECISION_CONV1,
     parameter int INPUT_DIM                  = 2,
     parameter int OUTPUT_DIM                 = 64,
     parameter int MULTIPLIER_DIFF_T          = 214742, //good
@@ -12,18 +13,18 @@ module convolution #(
     parameter int MULTIPLIER_OUT             = 58670, //good
     parameter int ZERO_POINT_WEIGHT          = 30075,
     parameter string INIT_PATH               = "???",
-    parameter logic [15:0] SCALE_IN [21:0]   = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
-                                                 62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
+    parameter logic [PRECISION_IN-1:0] SCALE_IN [21:0]   = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
+                                                             62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
 )(
     input logic clk,
     input logic reset,
     input event_type                   in_event,
     input edge_type  [MAX_EDGES-1:0]   in_edges,
-    input logic [PRECISION-1 :0]       in_features [INPUT_DIM-1 : 0],
+    input logic [PRECISION_IN-1 :0]    in_features [INPUT_DIM-1 : 0],
 
     output event_type                  out_event,
     output edge_type  [MAX_EDGES-1:0]  out_edges,
-    output logic [PRECISION-1 :0]      out_features [OUTPUT_DIM-1 : 0]
+    output logic [PRECISION_OUT-1 :0]  out_features [OUTPUT_DIM-1 : 0]
 );
 
     logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read, counter_quant;
@@ -34,15 +35,15 @@ module convolution #(
     edge_type[MAX_EDGES-1:0] in_edges_reg;
     event_type out_event_reg; // fifo output
     edge_type[MAX_EDGES-1:0] out_edges_reg;
-    typedef logic [PRECISION-1 :0] features_type [INPUT_DIM-1 : 0];
-    typedef logic [(PRECISION*INPUT_DIM)-1 :0] memory_type;
+    typedef logic [PRECISION_IN-1 :0] features_type [INPUT_DIM-1 : 0];
+    typedef logic [(PRECISION_IN*INPUT_DIM)-1 :0] memory_type;
     features_type in_features_reg;
 
     localparam IDLE = 2'd0;
     localparam CONV = 2'd1;
     
     localparam AWIDTH = $clog2(NUM_CHANNEL);
-    localparam DWIDTH = INPUT_DIM * PRECISION;
+    localparam DWIDTH = INPUT_DIM * PRECISION_IN;
     logic state = IDLE;
     logic state_reg = IDLE;
 
@@ -177,25 +178,25 @@ module convolution #(
     //                      Quantize inputs                        //
     /////////////////////////////////////////////////////////////////
 
-    logic signed [PRECISION:0]   features_a_temp [1:0];
-    logic signed [PRECISION:0]   features_b_temp [1:0];
-    logic signed [PRECISION:0]   features_a [INPUT_DIM+1:0];
-    logic signed [PRECISION:0]   features_b [INPUT_DIM+1:0];
+    logic signed [PRECISION_IN:0]   features_a_temp [1:0];
+    logic signed [PRECISION_IN:0]   features_b_temp [1:0];
+    logic signed [PRECISION_IN:0]   features_a [INPUT_DIM+1:0];
+    logic signed [PRECISION_IN:0]   features_b [INPUT_DIM+1:0];
 
     genvar a, b;
     generate
         for (a = 0; a < INPUT_DIM; a++) begin : port_a_assign
             always @(posedge clk) begin
-                features_a_temp[a][PRECISION-1 : 0] = {douta[((PRECISION)*(a+1))-1 : (PRECISION*a)]};
-                features_a_temp[a][PRECISION] = 0;
+                features_a_temp[a][PRECISION_IN-1 : 0] = {douta[((PRECISION_IN)*(a+1))-1 : (PRECISION_IN*a)]};
+                features_a_temp[a][PRECISION_IN] = 0;
                 features_a[a+2] <= ena_reg ? features_a_temp[a]-ZERO_POINT_IN : '0;
             end
         end
         for (b = 0; b < INPUT_DIM; b++) begin : port_b_assign
             always @(posedge clk) begin
-                features_b_temp[b][PRECISION-1 : 0] = !web_reg ? {doutb[((PRECISION)*(b+1))-1 : (PRECISION*b)]}
+                features_b_temp[b][PRECISION_IN-1 : 0] = !web_reg ? {doutb[((PRECISION_IN)*(b+1))-1 : (PRECISION_IN*b)]}
                                                                : in_features_reg[b];
-                features_b_temp[b][PRECISION] = 0;
+                features_b_temp[b][PRECISION_IN] = 0;
                 features_b[b+2] <= enb_reg ? features_b_temp[b]-ZERO_POINT_IN : '0;
             end
         end       
@@ -213,24 +214,24 @@ module convolution #(
     /////////////////////////////////////////////////////////////////
 
     //Prepare weights
-    localparam WEIGHT_WIDTH = ((INPUT_DIM+2)*(PRECISION))+32; //bias
-    logic [WEIGHT_WIDTH-1 : 0] weight_mem1;
-    logic [WEIGHT_WIDTH-1 : 0] weight_mem2;
-    logic signed [PRECISION:0] single_weight1_reg [INPUT_DIM+1:0];
-    logic signed [31:0]        single_bias1_reg;
-    logic signed [PRECISION:0] single_weight1 [INPUT_DIM+1:0];
-    logic signed [31:0]        single_bias1;
-    logic signed [PRECISION:0] single_weight2_reg [INPUT_DIM+1:0];
-    logic signed [31:0]        single_bias2_reg;
-    logic signed [PRECISION:0] single_weight2 [INPUT_DIM+1:0];
-    logic signed [31:0]        single_bias2;
+    localparam WEIGHT_WIDTH = ((INPUT_DIM+2)*(PRECISION_OUT))+32; //bias
+    logic [WEIGHT_WIDTH-1 : 0]     weight_mem1;
+    logic [WEIGHT_WIDTH-1 : 0]     weight_mem2;
+    logic signed [PRECISION_OUT:0] single_weight1_reg [INPUT_DIM+1:0];
+    logic signed [31:0]            single_bias1_reg;
+    logic signed [PRECISION_OUT:0] single_weight1 [INPUT_DIM+1:0];
+    logic signed [31:0]            single_bias1;
+    logic signed [PRECISION_OUT:0] single_weight2_reg [INPUT_DIM+1:0];
+    logic signed [31:0]            single_bias2_reg;
+    logic signed [PRECISION_OUT:0] single_weight2 [INPUT_DIM+1:0];
+    logic signed [31:0]            single_bias2;
 
     dual_port_memory_weights #(
-        .AWIDTH   ( $clog2(OUTPUT_DIM)           ),
-        .DWIDTH   ( (PRECISION*(INPUT_DIM+2))+32 ),
-        .STEP     ( 32                           ),
-        .RAM_TYPE ( "block"                      ),
-        .INIT_PATH ( INIT_PATH                   )
+        .AWIDTH   ( $clog2(OUTPUT_DIM)               ),
+        .DWIDTH   ( (PRECISION_OUT*(INPUT_DIM+2))+32 ),
+        .STEP     ( 32                               ),
+        .RAM_TYPE ( "block"                          ),
+        .INIT_PATH ( INIT_PATH                       )
     ) weights_memory   (
         .clk      ( clk      ),
         .en       ( state == CONV   ),
@@ -243,8 +244,8 @@ module convolution #(
     generate
         for (w = 0; w < INPUT_DIM+2; w++) begin : weights_assign
             always @(posedge clk) begin
-                single_weight1_reg[w] <= weight_mem1[(((PRECISION)*(w+1))-1)+32 : ((PRECISION)*w)+32] - ZERO_POINT_WEIGHT;
-                single_weight2_reg[w] <= weight_mem2[(((PRECISION)*(w+1))-1)+32 : ((PRECISION)*w)+32] - ZERO_POINT_WEIGHT;
+                single_weight1_reg[w] <= weight_mem1[(((PRECISION_OUT)*(w+1))-1)+32 : ((PRECISION_OUT)*w)+32] - ZERO_POINT_WEIGHT;
+                single_weight2_reg[w] <= weight_mem2[(((PRECISION_OUT)*(w+1))-1)+32 : ((PRECISION_OUT)*w)+32] - ZERO_POINT_WEIGHT;
             end
         end
     endgenerate
@@ -258,14 +259,14 @@ module convolution #(
         single_bias2 <= single_bias2_reg;
     end
 
-    logic [PRECISION-1:0] output_mat_a1;
-    logic [PRECISION-1:0] output_mat_a2;
-    logic [PRECISION-1:0] output_mat_b1;
-    logic [PRECISION-1:0] output_mat_b2;
-    logic [PRECISION-1:0] output_mat_a_full [OUTPUT_DIM-1:0];
-    logic [PRECISION-1:0] output_mat_b_full [OUTPUT_DIM-1:0];
-    logic [PRECISION-1:0] output_mat_full [OUTPUT_DIM-1:0];
-    logic [PRECISION-1:0] output_features [OUTPUT_DIM-1:0];
+    logic [PRECISION_OUT-1:0] output_mat_a1;
+    logic [PRECISION_OUT-1:0] output_mat_a2;
+    logic [PRECISION_OUT-1:0] output_mat_b1;
+    logic [PRECISION_OUT-1:0] output_mat_b2;
+    logic [PRECISION_OUT-1:0] output_mat_a_full [OUTPUT_DIM-1:0];
+    logic [PRECISION_OUT-1:0] output_mat_b_full [OUTPUT_DIM-1:0];
+    logic [PRECISION_OUT-1:0] output_mat_full [OUTPUT_DIM-1:0];
+    logic [PRECISION_OUT-1:0] output_features [OUTPUT_DIM-1:0];
 
 
     //Handle multiplications and outputs
@@ -273,7 +274,8 @@ module convolution #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION         ( PRECISION      )
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_a_1 (
         .clk             ( clk             ),
         .reset           ( reset           ),
@@ -287,7 +289,8 @@ module convolution #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION         ( PRECISION      )
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_a_2 (
         .clk             ( clk             ),
         .reset           ( reset           ),
@@ -301,7 +304,8 @@ module convolution #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION         ( PRECISION      )
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_b_1 (
         .clk             ( clk             ),
         .reset           ( reset           ),
@@ -315,7 +319,8 @@ module convolution #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION         ( PRECISION      )
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_b_2 (
         .clk             ( clk             ),
         .reset           ( reset           ),
@@ -351,7 +356,7 @@ module convolution #(
     end
 
     delay_module #(
-        .N        ( 31 ),
+        .N        ( 32 ),
         .DELAY    ( 8  )
     ) delay_event (
         .clk   ( clk     ),
