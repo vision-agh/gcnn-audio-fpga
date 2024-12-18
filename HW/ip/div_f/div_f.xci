@@ -4,7 +4,7 @@
     "xci_name": "div_f",
     "component_reference": "xilinx.com:ip:div_gen:5.1",
     "ip_revision": "19",
-    "gen_directory": "../../../../gcnn_das.gen/sources_1/ip/div_f",
+    "gen_directory": "../../../../GCNN-AUDIO.gen/sources_1/ip/div_f",
     "parameters": {
       "component_parameters": {
         "Component_Name": [ { "value": "div_f", "resolve_type": "user", "usage": "all" } ],
@@ -26,13 +26,13 @@
         "OptimizeGoal": [ { "value": "Performance", "resolve_type": "user", "usage": "all" } ],
         "OutTready": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "OutTLASTBehv": [ { "value": "Null", "resolve_type": "user", "usage": "all" } ],
-        "latency_configuration": [ { "value": "Automatic", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
+        "latency_configuration": [ { "value": "Manual", "value_src": "user", "resolve_type": "user", "usage": "all" } ],
         "latency": [ { "value": "32", "value_src": "user", "resolve_type": "user", "format": "long", "usage": "all" } ],
         "ACLKEN": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ],
         "ARESETN": [ { "value": "false", "resolve_type": "user", "format": "bool", "usage": "all" } ]
       },
       "model_parameters": {
-        "C_XDEVICEFAMILY": [ { "value": "versal", "resolve_type": "generated", "usage": "all" } ],
+        "C_XDEVICEFAMILY": [ { "value": "zynquplus", "resolve_type": "generated", "usage": "all" } ],
         "C_HAS_ARESETN": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_HAS_ACLKEN": [ { "value": "0", "resolve_type": "generated", "format": "long", "usage": "all" } ],
         "C_LATENCY": [ { "value": "32", "resolve_type": "generated", "format": "long", "usage": "all" } ],
@@ -58,16 +58,16 @@
         "C_M_AXIS_DOUT_TUSER_WIDTH": [ { "value": "1", "resolve_type": "generated", "format": "long", "usage": "all" } ]
       },
       "project_parameters": {
-        "ARCHITECTURE": [ { "value": "versal" } ],
-        "BASE_BOARD_PART": [ { "value": "xilinx.com:vck190:part0:3.1" } ],
+        "ARCHITECTURE": [ { "value": "zynquplus" } ],
+        "BASE_BOARD_PART": [ { "value": "xilinx.com:zcu104:part0:1.1" } ],
         "BOARD_CONNECTIONS": [ { "value": "" } ],
-        "DEVICE": [ { "value": "xcvc1902" } ],
-        "PACKAGE": [ { "value": "vsva2197" } ],
+        "DEVICE": [ { "value": "xczu7ev" } ],
+        "PACKAGE": [ { "value": "ffvc1156" } ],
         "PREFHDL": [ { "value": "VERILOG" } ],
         "SILICON_REVISION": [ { "value": "" } ],
         "SIMULATOR_LANGUAGE": [ { "value": "MIXED" } ],
-        "SPEEDGRADE": [ { "value": "-2MP" } ],
-        "STATIC_POWER": [ { "value": "S" } ],
+        "SPEEDGRADE": [ { "value": "-2" } ],
+        "STATIC_POWER": [ { "value": "" } ],
         "TEMPERATURE_GRADE": [ { "value": "E" } ],
         "USE_RDI_CUSTOMIZATION": [ { "value": "TRUE" } ],
         "USE_RDI_GENERATION": [ { "value": "TRUE" } ]
@@ -76,7 +76,7 @@
         "IPCONTEXT": [ { "value": "IP_Flow" } ],
         "IPREVISION": [ { "value": "19" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../gcnn_das.gen/sources_1/ip/div_f" } ],
+        "OUTPUTDIR": [ { "value": "../../../../GCNN-AUDIO.gen/sources_1/ip/div_f" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "." } ],
         "SWVERSION": [ { "value": "2022.2" } ],
@@ -159,7 +159,7 @@
           "abstraction_type": "xilinx.com:interface:axis_rtl:1.0",
           "mode": "slave",
           "parameters": {
-            "TDATA_NUM_BYTES": [ { "value": "1", "value_src": "auto", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
+            "TDATA_NUM_BYTES": [ { "value": "1", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "TDEST_WIDTH": [ { "value": "0", "value_src": "constant", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "TID_WIDTH": [ { "value": "0", "value_src": "constant", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],
             "TUSER_WIDTH": [ { "value": "0", "resolve_type": "generated", "format": "long", "is_ips_inferred": true, "is_static_object": false } ],

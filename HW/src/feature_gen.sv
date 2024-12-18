@@ -33,6 +33,7 @@ module feature_gen #(
 
     assign out_event.t = in_event.t;
     assign out_event.f = in_event.f;
+    assign out_event.is_last = in_event.is_last;
     assign out_event.valid = f_avg_valid && t_avg_valid;
     assign out_edges = in_edges;
     
