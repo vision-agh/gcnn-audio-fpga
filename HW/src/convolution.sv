@@ -178,8 +178,8 @@ module convolution #(
     //                      Quantize inputs                        //
     /////////////////////////////////////////////////////////////////
 
-    logic signed [PRECISION_IN:0]   features_a_temp [1:0];
-    logic signed [PRECISION_IN:0]   features_b_temp [1:0];
+    logic signed [PRECISION_IN:0]   features_a_temp [INPUT_DIM-1:0];
+    logic signed [PRECISION_IN:0]   features_b_temp [INPUT_DIM-1:0];
     logic signed [PRECISION_IN:0]   features_a [INPUT_DIM+1:0];
     logic signed [PRECISION_IN:0]   features_b [INPUT_DIM+1:0];
 
@@ -366,7 +366,7 @@ module convolution #(
 
     delay_module #(
         .N        ( 357 ),
-        .DELAY    ( 10  )
+        .DELAY    ( 8   )
     ) delay_edge (
         .clk   ( clk     ),
         .idata ( {out_edges_reg} ),

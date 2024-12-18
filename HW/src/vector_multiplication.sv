@@ -18,8 +18,8 @@ module vector_multiplication #(
     localparam PARALLEL = INPUT_DIM / 2;
     //32+4
     logic signed [PRECISION_IN:0] weight_matrix_precision [INPUT_DIM-1:0];
-    logic signed [63:0]           matrix_result [PARALLEL : 0];
-    logic signed [63:0]           matrix_result_reg [PARALLEL : 0];
+    logic signed [63:0]           matrix_result [PARALLEL-1 : 0];
+    logic signed [63:0]           matrix_result_reg [PARALLEL-1 : 0];
     logic signed [63:0]           debug_bias ;
     logic signed [63:0]           debug_mul;
     logic signed [31:0]           bias_reg;
