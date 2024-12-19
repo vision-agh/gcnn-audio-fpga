@@ -27,7 +27,7 @@ module convolution #(
     output logic [PRECISION_OUT-1 :0]  out_features [OUTPUT_DIM-1 : 0]
 );
 
-    logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read, counter_quant;
+    logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read;
     logic [$clog2(F_RADIUS):0] counter_quant, counter_mul1, counter_mul2, counter_mul_out, counter_compare, counter_acc;
     logic [$clog2(OUTPUT_DIM/2):0] outdim_counter, outdim_counter_reg, outdim_counter_read, outdim_counter_quant;
     logic [$clog2(OUTPUT_DIM/2):0] outdim_counter_mul1, outdim_counter_mul2, outdim_counter_mul_out, outdim_counter_compare, outdim_counter_acc;
@@ -90,11 +90,7 @@ module convolution #(
 
     assign condition_a = in_edges[counter_reg].is_connected;
     assign condition_b = (counter_reg < F_RADIUS) ? in_edges[F_RADIUS+1+counter_reg].is_connected : 1'b0;
-
-    logic [26-1 : 0] t_temp;
     logic start;
-    logic [18-1 : 0] f_temp;
-    logic [$clog2(MAX_EDGES)-1 : 0]             num_edges;
 
     // Counter and edge processing
     always @(posedge clk) begin
@@ -104,7 +100,6 @@ module convolution #(
             ena_reg <= '0;
             enb_reg <= '0;
             web_reg <= '0;
-            out_event.valid <= '0;
             counter <= F_RADIUS;
             outdim_counter <= OUTPUT_DIM/2;
         end else begin

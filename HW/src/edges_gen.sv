@@ -52,7 +52,7 @@ module edges_gen #(
     assign enb  = (counter <= F_RADIUS && condition_b && state==GGEN) ? 1'b1 : 1'b0;
     assign wea  = 0;
     assign dinb[DWIDTH-1 : 1] = in_event_reg.t;
-    assign dinb[DWIDTH-1 : 0] = 1'b1;
+    assign dinb[0] = 1'b1;
     assign web  = (counter == F_RADIUS) && state==GGEN;
 
     assign addra = in_event.f + counter*SKIP_STEP;
