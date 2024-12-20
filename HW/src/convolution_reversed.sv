@@ -13,6 +13,7 @@ module convolution_reversed #(
     parameter int MULTIPLIER_OUT             = 58670, //good
     parameter int ZERO_POINT_WEIGHT          = 30075,
     parameter string INIT_PATH               = "???",
+    parameter logic DSP                      = 0,
     parameter logic [PRECISION_IN-1:0] SCALE_IN [21:0]   = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
                                                              62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
 )(
@@ -330,67 +331,132 @@ module convolution_reversed #(
     logic [PRECISION_OUT-1:0] output_mat_full [OUTPUT_DIM-1:0];
     logic [PRECISION_OUT-1:0] output_features [OUTPUT_DIM-1:0];
 
-
     //Handle multiplications and outputs
-    vector_multiplication_2 #(
-        .INPUT_DIM         ( INPUT_DIM+2    ),
-        .MULTIPLIER        ( MULTIPLIER_OUT ),
-        .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION_IN      ( PRECISION_IN   ),
-        .PRECISION_OUT     ( PRECISION_OUT  )
-    ) mul_a_1 (
-        .clk             ( clk             ),
-        .reset           ( reset           ),
-        .feature_matrix  ( features_a      ),
-        .weight_matrix   ( single_weight1  ),
-        .bias            ( single_bias1    ),
-        .output_matrix   ( output_mat_a1   )
-    );
 
-    vector_multiplication_2 #(
-        .INPUT_DIM         ( INPUT_DIM+2    ),
-        .MULTIPLIER        ( MULTIPLIER_OUT ),
-        .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION_IN      ( PRECISION_IN   ),
-        .PRECISION_OUT     ( PRECISION_OUT  )
-    ) mul_a_2 (
-        .clk             ( clk             ),
-        .reset           ( reset           ),
-        .feature_matrix  ( features_a      ),
-        .weight_matrix   ( single_weight2  ),
-        .bias            ( single_bias2    ),
-        .output_matrix   ( output_mat_a2   )
-    );
-
-    vector_multiplication_2 #(
-        .INPUT_DIM         ( INPUT_DIM+2    ),
-        .MULTIPLIER        ( MULTIPLIER_OUT ),
-        .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION_IN      ( PRECISION_IN   ),
-        .PRECISION_OUT     ( PRECISION_OUT  )
-    ) mul_b_1 (
-        .clk             ( clk             ),
-        .reset           ( reset           ),
-        .feature_matrix  ( features_b      ),
-        .weight_matrix   ( single_weight1  ),
-        .bias            ( single_bias1    ),
-        .output_matrix   ( output_mat_b1   )
-    );
-
-    vector_multiplication_2 #(
-        .INPUT_DIM         ( INPUT_DIM+2    ),
-        .MULTIPLIER        ( MULTIPLIER_OUT ),
-        .ZERO_POINT        ( ZERO_POINT_OUT ),
-        .PRECISION_IN      ( PRECISION_IN   ),
-        .PRECISION_OUT     ( PRECISION_OUT  )
-    ) mul_b_2 (
-        .clk             ( clk             ),
-        .reset           ( reset           ),
-        .feature_matrix  ( features_b      ),
-        .weight_matrix   ( single_weight2  ),
-        .bias            ( single_bias2    ),
-        .output_matrix   ( output_mat_b2   )
-    );
+    generate
+        if (!DSP) begin
+            vector_multiplication_2 #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_a_1 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_a      ),
+                .weight_matrix   ( single_weight1  ),
+                .bias            ( single_bias1    ),
+                .output_matrix   ( output_mat_a1   )
+            );
+        
+            vector_multiplication_2 #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_a_2 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_a      ),
+                .weight_matrix   ( single_weight2  ),
+                .bias            ( single_bias2    ),
+                .output_matrix   ( output_mat_a2   )
+            );
+        
+            vector_multiplication_2 #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_b_1 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_b      ),
+                .weight_matrix   ( single_weight1  ),
+                .bias            ( single_bias1    ),
+                .output_matrix   ( output_mat_b1   )
+            );
+        
+            vector_multiplication_2 #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_b_2 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_b      ),
+                .weight_matrix   ( single_weight2  ),
+                .bias            ( single_bias2    ),
+                .output_matrix   ( output_mat_b2   )
+            );
+        end
+        else begin
+            vector_multiplication_dsp #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_a_1 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_a      ),
+                .weight_matrix   ( single_weight1  ),
+                .bias            ( single_bias1    ),
+                .output_matrix   ( output_mat_a1   )
+            );
+        
+            vector_multiplication_dsp #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_a_2 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_a      ),
+                .weight_matrix   ( single_weight2  ),
+                .bias            ( single_bias2    ),
+                .output_matrix   ( output_mat_a2   )
+            );
+        
+            vector_multiplication_dsp #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_b_1 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_b      ),
+                .weight_matrix   ( single_weight1  ),
+                .bias            ( single_bias1    ),
+                .output_matrix   ( output_mat_b1   )
+            );
+        
+            vector_multiplication_dsp #(
+                .INPUT_DIM         ( INPUT_DIM+2    ),
+                .MULTIPLIER        ( MULTIPLIER_OUT ),
+                .ZERO_POINT        ( ZERO_POINT_OUT ),
+                .PRECISION_IN      ( PRECISION_IN   ),
+                .PRECISION_OUT     ( PRECISION_OUT  )
+            ) mul_b_2 (
+                .clk             ( clk             ),
+                .reset           ( reset           ),
+                .feature_matrix  ( features_b      ),
+                .weight_matrix   ( single_weight2  ),
+                .bias            ( single_bias2    ),
+                .output_matrix   ( output_mat_b2   )
+            );
+        end
+    endgenerate
 
     always @(posedge clk) begin
         output_mat_a_full[outdim_counter_mul_out] <= ena_mul_out ? output_mat_a1 : '0;
