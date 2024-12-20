@@ -17,9 +17,9 @@ module vector_multiplication_dsp #(
 
     localparam PARALLEL = INPUT_DIM / 4;
 
-    logic signed [23:0]           matrix_result [INPUT_DIM-1 : 0];
-    logic signed [31:0]           debug_bias ;
-    logic signed [31:0]           debug_mul;
+    logic signed [24:0]           matrix_result [INPUT_DIM-1 : 0];
+    logic signed [63:0]           debug_bias ;
+    logic signed [63:0]           debug_mul;
     logic signed [31:0]           bias_reg;
 
     genvar p;

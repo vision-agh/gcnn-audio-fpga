@@ -120,7 +120,8 @@ module top #(
          .MULTIPLIER_OUT    ( CONV2_MULTIPLIER_OUT    ),
          .ZERO_POINT_WEIGHT ( CONV2_ZERO_POINT_WEIGHT ),
          .SCALE_IN          ( CONV2_SCALE_IN          ),
-         .INIT_PATH         ( INIT_PATH_CONV2         )
+         .INIT_PATH         ( INIT_PATH_CONV2         ),
+         .DSP               ( 1                       )
      ) u_conv2 (
          .clk          ( clk               ),
          .reset        ( reset             ),
