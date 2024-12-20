@@ -332,7 +332,7 @@ module convolution_reversed #(
 
 
     //Handle multiplications and outputs
-    vector_multiplication #(
+    vector_multiplication_2 #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
@@ -347,7 +347,7 @@ module convolution_reversed #(
         .output_matrix   ( output_mat_a1   )
     );
 
-    vector_multiplication #(
+    vector_multiplication_2 #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
@@ -362,7 +362,7 @@ module convolution_reversed #(
         .output_matrix   ( output_mat_a2   )
     );
 
-    vector_multiplication #(
+    vector_multiplication_2 #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
@@ -377,7 +377,7 @@ module convolution_reversed #(
         .output_matrix   ( output_mat_b1   )
     );
 
-    vector_multiplication #(
+    vector_multiplication_2 #(
         .INPUT_DIM         ( INPUT_DIM+2    ),
         .MULTIPLIER        ( MULTIPLIER_OUT ),
         .ZERO_POINT        ( ZERO_POINT_OUT ),
