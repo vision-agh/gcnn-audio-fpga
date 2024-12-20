@@ -22,7 +22,6 @@ module vector_multiplication_2 #(
     logic signed [63:0]           matrix_result_reg [PARALLEL : 0];
     logic signed [63:0]           debug_bias ;
     logic signed [63:0]           debug_mul;
-    logic signed [63:0]           debug_mul2;
     logic signed [31:0]           bias_reg;
 
     genvar p;
@@ -54,8 +53,7 @@ module vector_multiplication_2 #(
             debug_bias = debug_bias + matrix_result_reg[i];
         end
         debug_mul <= debug_bias;
-        debug_mul2 <= (debug_mul*MULTIPLIER);
-        output_matrix <= (debug_mul2>>>32) + ZERO_POINT;
+        output_matrix <= ((debug_mul*MULTIPLIER)>>>32) + ZERO_POINT;
         bias_reg <= bias;
     end
 
