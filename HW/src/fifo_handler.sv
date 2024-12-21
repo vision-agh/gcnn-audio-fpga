@@ -4,7 +4,7 @@ import graph_pkg::*;
 
 
 module fifo_handler #(
-    parameter THROUGHTPUT = 360
+    parameter THROUGHTPUT = 720
 )(
     input  logic                              clk,
     input  logic                              reset,
