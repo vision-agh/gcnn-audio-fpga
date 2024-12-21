@@ -209,9 +209,14 @@ module convolution_reversed #(
     //                   Perform multiplications                   //
     /////////////////////////////////////////////////////////////////
 
+    localparam WEIGHT_ADDR = ((INPUT_DIM/8)+1)*OUTPUT_DIM;
+    localparam WEIGHT_DATA = 64;
+    localparam WEIGHT_WIDTH = ((INPUT_DIM/8)+1);
+    localparam WIRE_WIDTH = WEIGHT_WIDTH*64;
+
     //Prepare weights
-    typedef logic [63 :0] weights_reg_type [8 : 0];
-    typedef logic [575 :0] weights_wire_type;
+    typedef logic [63 :0] weights_reg_type [WEIGHT_WIDTH-1 : 0];
+    typedef logic [WIRE_WIDTH-1 :0] weights_wire_type;
     logic [63 : 0]  weight_mem1;
     logic [63 : 0]  weight_mem2;
     weights_reg_type single_weight1_reg;
@@ -229,11 +234,10 @@ module convolution_reversed #(
     logic signed [PRECISION_OUT:0] single_weight2 [INPUT_DIM+1:0];
     logic signed [31:0]            single_bias2;
 
-    localparam WEIGHT_ADDR = ((INPUT_DIM/8)+1)*OUTPUT_DIM;
-    localparam WEIGHT_DATA = 64;
+
     logic [$clog2(WEIGHT_ADDR) : 0] weight_counter, weight_counter_reg;
     logic                           weight_en, weight_en_reg, weight_en_reg2, weight_en_reg3;
-    logic                           load_first, load_weights, load_weights_reg;
+    logic                           load_first, load_weights, load_weights_reg, load_weights2;
     assign load_weights_reg = (counter == F_RADIUS && state==CONV) || in_event.valid;
 
      always @(posedge clk) begin
@@ -253,7 +257,7 @@ module convolution_reversed #(
                     weight_counter <= '0;
                 end
             end
-            if ((weight_counter+1) % 9 == 0) begin
+            if ((weight_counter+1) % WEIGHT_WIDTH == 0) begin
                 weight_en <= 1'b0;
             end
         end
@@ -298,7 +302,8 @@ module convolution_reversed #(
     assign single_weight2_wire =  weights_wire_type'(single_weight2_reg);
 
     always @(posedge clk) begin
-        weight_counter_reg <= weight_counter % 9;
+        load_weights2 <= load_weights;
+        weight_counter_reg <= weight_counter % WEIGHT_WIDTH;
         weight_en_reg <= weight_en;
         weight_en_reg2 <= weight_en_reg;
         weight_en_reg3 <= weight_en_reg2;
@@ -307,14 +312,14 @@ module convolution_reversed #(
             single_weight2_reg[weight_counter_reg] <= weight_mem2;
         end
         if (weight_en_reg2) begin
-            prepare_bias1 <= single_weight1_wire[543:512];
-            prepare_bias2 <= single_weight2_wire[543:512];
-            prepare_weight1[INPUT_DIM+1] <= single_weight1_wire[575:568] - ZERO_POINT_WEIGHT;
-            prepare_weight2[INPUT_DIM+1] <= single_weight2_wire[575:568] - ZERO_POINT_WEIGHT;
-            prepare_weight1[INPUT_DIM] <= single_weight1_wire[567:560] - ZERO_POINT_WEIGHT;
-            prepare_weight2[INPUT_DIM] <= single_weight2_wire[567:560] - ZERO_POINT_WEIGHT;
+            prepare_bias1 <= single_weight1_wire[WIRE_WIDTH-33:WIRE_WIDTH-64];
+            prepare_bias2 <= single_weight2_wire[WIRE_WIDTH-33:WIRE_WIDTH-64];
+            prepare_weight1[INPUT_DIM+1] <= single_weight1_wire[WIRE_WIDTH-1:WIRE_WIDTH-8] - ZERO_POINT_WEIGHT;
+            prepare_weight2[INPUT_DIM+1] <= single_weight2_wire[WIRE_WIDTH-1:WIRE_WIDTH-8] - ZERO_POINT_WEIGHT;
+            prepare_weight1[INPUT_DIM] <= single_weight1_wire[WIRE_WIDTH-9:WIRE_WIDTH-16] - ZERO_POINT_WEIGHT;
+            prepare_weight2[INPUT_DIM] <= single_weight2_wire[WIRE_WIDTH-9:WIRE_WIDTH-16] - ZERO_POINT_WEIGHT;
         end
-        if (weight_en_reg3 && !weight_en_reg2) begin
+        if (load_weights2) begin
             single_weight1 <= prepare_weight1;
             single_weight2 <= prepare_weight2;
             single_bias1 <= prepare_bias1;
@@ -460,25 +465,25 @@ module convolution_reversed #(
 
     always @(posedge clk) begin
         output_mat_a_full[outdim_counter_mul_out] <= ena_mul_out ? output_mat_a1 : '0;
-        output_mat_a_full[outdim_counter_mul_out+32] <= ena_mul_out ? output_mat_a2 : '0;
+        output_mat_a_full[outdim_counter_mul_out+(OUTPUT_DIM/2)] <= ena_mul_out ? output_mat_a2 : '0;
         output_mat_b_full[outdim_counter_mul_out] <= enb_mul_out ? output_mat_b1 : '0;
-        output_mat_b_full[outdim_counter_mul_out+32] <= enb_mul_out ? output_mat_b2 : '0;
+        output_mat_b_full[outdim_counter_mul_out+(OUTPUT_DIM/2)] <= enb_mul_out ? output_mat_b2 : '0;
     end
 
     always @(posedge clk) begin
         output_mat_full[outdim_counter_compare] <= output_mat_a_full[outdim_counter_compare] > output_mat_b_full[outdim_counter_compare] ? output_mat_a_full[outdim_counter_compare]
                                                                                                                                    : output_mat_b_full[outdim_counter_compare];
-        output_mat_full[outdim_counter_compare+32] <= output_mat_a_full[outdim_counter_compare+32] > output_mat_b_full[outdim_counter_compare+32] ? output_mat_a_full[outdim_counter_compare+32]
-                                                                                                                                   : output_mat_b_full[outdim_counter_compare+32];
+        output_mat_full[outdim_counter_compare+(OUTPUT_DIM/2)] <= output_mat_a_full[outdim_counter_compare+(OUTPUT_DIM/2)] > output_mat_b_full[outdim_counter_compare+(OUTPUT_DIM/2)] ? output_mat_a_full[outdim_counter_compare+(OUTPUT_DIM/2)]
+                                                                                                                                   : output_mat_b_full[outdim_counter_compare+(OUTPUT_DIM/2)];
 
         if (outdim_counter_acc == 0 && counter_acc == 0) begin
             output_features <= '{default:ZERO_POINT_OUT};;
             output_features[outdim_counter_acc] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc];
-            output_features[outdim_counter_acc+32] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc+32] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc+32];
+            output_features[outdim_counter_acc+(OUTPUT_DIM/2)] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)];
         end
         else begin
             output_features[outdim_counter_acc] <= output_features[outdim_counter_acc] > output_mat_full[outdim_counter_acc] ? output_features[outdim_counter_acc] : output_mat_full[outdim_counter_acc];
-            output_features[outdim_counter_acc+32] <= output_features[outdim_counter_acc+32] > output_mat_full[outdim_counter_acc+32] ? output_features[outdim_counter_acc+32] : output_mat_full[outdim_counter_acc+32];
+            output_features[outdim_counter_acc+(OUTPUT_DIM/2)] <= output_features[outdim_counter_acc+(OUTPUT_DIM/2)] > output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)] ? output_features[outdim_counter_acc+(OUTPUT_DIM/2)] : output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)];
         end
         out_features <= output_features;
     end

@@ -18,9 +18,9 @@ package graph_pkg;
     parameter INPUT_PARAMETER = 2; 
     
     parameter INPUT_DIM_1 = 2; 
-    parameter OUTPUT_DIM_1 = 64;
-    parameter OUTPUT_DIM_2 = 64;
-    parameter OUTPUT_DIM_3 = 64;
+    parameter OUTPUT_DIM_1 = 8;
+    parameter OUTPUT_DIM_2 = 16;
+    parameter OUTPUT_DIM_3 = 32;
     parameter OUTPUT_DIM_4 = 64;
 
     parameter ZERO_POINT = '0;

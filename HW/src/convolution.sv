@@ -224,7 +224,7 @@ module convolution #(
     dual_port_memory_weights #(
         .AWIDTH   ( $clog2(OUTPUT_DIM)               ),
         .DWIDTH   ( (PRECISION_OUT*(INPUT_DIM+2))+32 ),
-        .STEP     ( 32                               ),
+        .STEP     ( OUTPUT_DIM/2                     ),
         .RAM_TYPE ( "block"                          ),
         .INIT_PATH ( INIT_PATH                       )
     ) weights_memory   (
@@ -327,25 +327,25 @@ module convolution #(
 
     always @(posedge clk) begin
         output_mat_a_full[outdim_counter_mul_out] <= ena_mul_out ? output_mat_a1 : '0;
-        output_mat_a_full[outdim_counter_mul_out+32] <= ena_mul_out ? output_mat_a2 : '0;
+        output_mat_a_full[outdim_counter_mul_out+(OUTPUT_DIM/2)] <= ena_mul_out ? output_mat_a2 : '0;
         output_mat_b_full[outdim_counter_mul_out] <= enb_mul_out ? output_mat_b1 : '0;
-        output_mat_b_full[outdim_counter_mul_out+32] <= enb_mul_out ? output_mat_b2 : '0;
+        output_mat_b_full[outdim_counter_mul_out+(OUTPUT_DIM/2)] <= enb_mul_out ? output_mat_b2 : '0;
     end
 
     always @(posedge clk) begin
         output_mat_full[outdim_counter_compare] <= output_mat_a_full[outdim_counter_compare] > output_mat_b_full[outdim_counter_compare] ? output_mat_a_full[outdim_counter_compare]
                                                                                                                                    : output_mat_b_full[outdim_counter_compare];
-        output_mat_full[outdim_counter_compare+32] <= output_mat_a_full[outdim_counter_compare+32] > output_mat_b_full[outdim_counter_compare+32] ? output_mat_a_full[outdim_counter_compare+32]
-                                                                                                                                   : output_mat_b_full[outdim_counter_compare+32];
+        output_mat_full[outdim_counter_compare+(OUTPUT_DIM/2)] <= output_mat_a_full[outdim_counter_compare+(OUTPUT_DIM/2)] > output_mat_b_full[outdim_counter_compare+(OUTPUT_DIM/2)] ? output_mat_a_full[outdim_counter_compare+(OUTPUT_DIM/2)]
+                                                                                                                                   : output_mat_b_full[outdim_counter_compare+(OUTPUT_DIM/2)];
 
         if (outdim_counter_acc == 0 && counter_acc == 0) begin
             output_features <= '{default:ZERO_POINT_OUT};;
             output_features[outdim_counter_acc] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc];
-            output_features[outdim_counter_acc+32] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc+32] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc+32];
+            output_features[outdim_counter_acc+(OUTPUT_DIM/2)] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)];
         end
         else begin
             output_features[outdim_counter_acc] <= output_features[outdim_counter_acc] > output_mat_full[outdim_counter_acc] ? output_features[outdim_counter_acc] : output_mat_full[outdim_counter_acc];
-            output_features[outdim_counter_acc+32] <= output_features[outdim_counter_acc+32] > output_mat_full[outdim_counter_acc+32] ? output_features[outdim_counter_acc+32] : output_mat_full[outdim_counter_acc+32];
+            output_features[outdim_counter_acc+(OUTPUT_DIM/2)] <= output_features[outdim_counter_acc+(OUTPUT_DIM/2)] > output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)] ? output_features[outdim_counter_acc+(OUTPUT_DIM/2)] : output_mat_full[outdim_counter_acc+(OUTPUT_DIM/2)];
         end
         out_features <= output_features;
     end
