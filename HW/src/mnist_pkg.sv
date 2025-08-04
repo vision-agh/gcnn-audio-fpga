@@ -1,52 +1,48 @@
 package graph_pkg;
 
-    //////////////////////////////
-    // CONFIGURATION PARAMETERS //
-    //////////////////////////////
 
-    parameter GRAPH_SIZE       = 128;                  // The size of graph representation (in x, y and time dimensions)
-    parameter GRAPH_BIT_WIDTH  = $clog2(GRAPH_SIZE);
-    parameter RADIUS           = 3;                    // The search radius for egde generation
-    parameter MAX_EDGES	       = 29;                   // The maximum number of edges for single vertice (before graph rescaling - MaxPool)
-    parameter TIME_WINDOW      = 200000;               // The time window for events accumulation for single graph representation (in us)
-    parameter PRECISION        = 8;                    // Precision for weights and features in GCNN model (in bits)
-    parameter string REPO_PATH = "/path/to/repo";      // Path to repository (needed for memory init files)
+    parameter F_RADIUS   = 10; //Search radius will be F_RADIUS*SKIPSTEPS                    
+    parameter T_RADIUS   = 20000;                 
+    parameter MAX_EDGES  = (F_RADIUS*2) + 1; //the same F neighbour possible!;         
+    parameter PRECISION_GEN  = 16;                    
+    parameter PRECISION_CONV1  = 16;                    
+    parameter PRECISION_CONV2  = 8;                    
+    parameter PRECISION_CONV3  = 8;                    
+    parameter PRECISION_CONV4  = 8;                    
+
+    parameter T_WIDTH  = 20; //Max of 1000000
+    parameter F_WIDTH  = 10; //Max of 700
     
-    ////////////////
-    // DATA TYPES //
-    ////////////////
+    parameter NUM_CHANNEL = 700;
 
-    // event_type for normalized events processing
+    parameter INPUT_PARAMETER = 2; 
+    
+    parameter INPUT_DIM_1 = 2; 
+    parameter OUTPUT_DIM_1 = 64;
+    parameter OUTPUT_DIM_2 = 64;
+    parameter OUTPUT_DIM_3 = 64;
+    parameter OUTPUT_DIM_4 = 64;
+
+    parameter ZERO_POINT = '0;
+    parameter MULTIPLIER = '0;
+   
+    parameter SKIP_STEP = 10;
+    
     typedef struct packed {
-      logic [GRAPH_BIT_WIDTH-1 : 0] x;
-      logic [GRAPH_BIT_WIDTH-1 : 0] y;
-      logic [GRAPH_BIT_WIDTH-1 : 0] t;
-      logic	                        p;
-      logic                         valid;
+      logic [T_WIDTH -1: 0] t;
+      logic [F_WIDTH -1: 0] f;
+      logic                 is_last;
+      logic                 valid;
     } event_type;
-    
-    // edge_type for processing egde list (before graph rescaling - MaxPool)
+
     typedef struct packed {
-      logic [$clog2(RADIUS) : 0] t;
-      logic                      attribute;
-      logic                      is_connected;
+      logic [PRECISION_GEN-1 : 0] dt;
+      logic                       is_connected;
     } edge_type;
 
-    ///////////////////////////////
-    // CONTEXT MEMORY PARAMETERS //
-    ///////////////////////////////
+    parameter DELTA_T_WIDTH = 15; //max value of 20000
+    parameter GEN_MULTIPLIER_T = 4295;
+    parameter GEN_MULTIPLIER_F = 6135480;
+    parameter GEN_ZERO_POINT = '0;
 
-    parameter MEMORY_OPS_NUM = 15;   // Number of memory accesses for single event (before graph rescaling - MaxPool)
-    parameter MEMORY_OPS_NUM_MP = 5; // Number of memory accesses for single event (after graph rescaling - MaxPool)
-
-    // Consecutive relative addresses for memory accesses (before graph rescaling - MaxPool)
-    parameter logic [1:0] MEM_ADDR_A_X [MEMORY_OPS_NUM-1:0] = {0, 1, 2, 3, 2, 1, 0, 1, 2, 2, 1, 0, 1, 2, 0};  //LAST IS WRITE
-    parameter bit         MEM_SIGN_A_X [MEMORY_OPS_NUM-1:0] = {0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0};
-
-    parameter logic [1:0] MEM_ADDR_B_X [MEMORY_OPS_NUM-1:0] = {0, 2, 1, 0, 1, 2, 2, 1, 0, 1, 2, 3, 2, 1, 0};
-    parameter bit         MEM_SIGN_B_X [MEMORY_OPS_NUM-1:0] = {0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0};
-    
-    parameter logic [1:0] MEM_ADDR_B_Y [MEMORY_OPS_NUM-1:0] = {3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0}; //[Always positive]
-    parameter logic [1:0] MEM_ADDR_A_Y [MEMORY_OPS_NUM-1:0] = {0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3}; //[Always negative] LAST IS WRITE
-
-endpackage;
+endpackage
