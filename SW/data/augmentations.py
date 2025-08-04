@@ -31,7 +31,7 @@ class RandomShiftTime(BaseTransform):
         self.shift = shift
 
     def __call__(self, data):
-        shift = ((torch.rand(1) * 2 - 1) * self.time_window).to(torch.int16)
+        shift = ((torch.rand(1) * 2 - 1) * self.shift * self.time_window).to(torch.int16)
         data.pos[:, 0] += shift
         data.pos[:, 0] = torch.clamp(data.pos[:, 0], 0, self.time_window)
         return data
@@ -67,7 +67,7 @@ class RandomSpreadTime(BaseTransform):
         self.spread = spread
     
     def __call__(self, data):
-        spread = ((torch.rand(data.pos.size(0)) * 2 - 1) * self.time_window).to(torch.int16)
+        spread = ((torch.rand(data.pos.size(0)) * 2 - 1) * self.spread * self.time_window).to(torch.int16)
         data.pos[:, 0] += spread
         data.pos[:, 0] = torch.clamp(data.pos[:, 0], 0, self.time_window)
         return data
