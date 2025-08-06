@@ -4,12 +4,10 @@ import h5py
 import numpy as np
 import torch
 import lightning as L
-import torch_geometric
 
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from torch_geometric.data import Data
 
 from data.dataset_tdigits import SpikingDS
 

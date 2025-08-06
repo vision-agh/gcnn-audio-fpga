@@ -1,10 +1,14 @@
 from setuptools import setup, Extension
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+import pybind11
+from setuptools.command.build_ext import build_ext
+
+from setuptools import setup
+from torch.utils.cpp_extension import CppExtension, BuildExtension
 
 setup(
     name='edge_generator',
     ext_modules=[
-        CUDAExtension(
+        CppExtension(
             'edge_generator',
             ['data/edge_generator.cpp'],
         )

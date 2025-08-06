@@ -4,11 +4,9 @@ import h5py
 import numpy as np
 import torch
 import lightning as L
-import torch_geometric
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from torch_geometric.data import Data
 
 from data.dataset import SpikingDS
 
@@ -40,8 +38,8 @@ class SpikingDigits(L.LightningDataModule):
 
             pos = np.column_stack((times, units))
 
-            data = Data(pos=torch.tensor(pos, dtype=torch.float),
-                        y=torch.tensor(labels, dtype=torch.long))
+            data = {'pos': torch.tensor(pos, dtype=torch.float), 
+                    'y': torch.tensor(labels, dtype=torch.long)}
             
             torch.save(data, new_file_name)
 
@@ -91,5 +89,31 @@ class SpikingDigits(L.LightningDataModule):
     
     @staticmethod
     def collate_fn(data_list):
-        batch = torch_geometric.data.Batch.from_data_list(data_list)
-        return batch
+        x = torch.cat([data['x'] for data in data_list], dim=0)
+        pos = torch.cat([data['pos'] for data in data_list], dim=0)
+
+        edge_index = []
+        offset = 0
+        for d in data_list:
+            edge_index.append(d['edge_index'].T + offset)
+            offset += d['x'].shape[0]
+        edge_index = torch.cat(edge_index, dim=0)
+
+        y = torch.stack([data['y'] for data in data_list], dim=0)
+
+        batch = torch.cat([
+            torch.full((d['x'].shape[0],), i, dtype=torch.long)
+            for i, d in enumerate(data_list)
+        ], dim=0)
+
+        keyword  = torch.stack([d['keyword'] for d in data_list], dim=0)
+        cls = torch.stack([d['cls'] for d in data_list], dim=0)
+
+
+        return {"x": x,
+                "pos": pos,
+                "edge_index": edge_index,
+                "y": y,
+                "batch": batch,
+                "keyword": keyword,
+                "cls": cls}

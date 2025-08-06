@@ -1,24 +1,15 @@
 import torch
-from torch import Tensor
+import torch.nn as nn
 import torch.nn.functional as F
+
+from torch.autograd import Variable
 from torch.nn import Sequential, Linear, BatchNorm1d
-from torch_geometric.nn import MessagePassing
-from torch_geometric.nn.inits import reset
-from torch_geometric.data import Data
-from torch_geometric.utils import add_self_loops, remove_self_loops
-from torch_geometric.typing import (
-    Adj,
-    OptTensor,
-    PairOptTensor,
-    PairTensor,
-    SparseTensor,
-    torch_sparse,
-)
-from typing import Optional, Union
 
 from models.networks.layers.quantisation.observer import Observer, FakeQuantize, quantize_tensor, dequantize_tensor
 
-class MyPointNetConv(MessagePassing):
+import numpy as np
+
+class MyPointNetConv(nn.Module):
     def __init__(
         self,
         input_dim: int,
@@ -26,29 +17,27 @@ class MyPointNetConv(MessagePassing):
         bias: bool = False,
         num_bits: int = 8,
         first_layer: bool = False,
-        **kwargs,
     ):
-        kwargs.setdefault('aggr', 'max')
-        super().__init__(**kwargs)
-
+        
+        super(MyPointNetConv, self).__init__()
+        
         self.input_dim = input_dim
         self.output_dim = output_dim
-        self.num_bits = num_bits
         self.bias = bias
+        self.num_bits = num_bits
         self.first_layer = first_layer
 
         # Number of bits for quantization scales
-        self.num_bits_obs = 32 
+        self.num_bits_obs = 32
 
         # Define layers
         self.linear = Linear(input_dim, output_dim, bias=bias)
         self.norm = BatchNorm1d(output_dim)
-        self.mlp = Sequential(self.linear, self.norm)
 
         self.use_relu = True
-        self.local_nn = self.mlp
-        self.global_nn = None  # Currently not used
+        self.global_nn = None
         self.add_self_loops = True
+        self.use_observer_input: bool = True
 
         self.reset_parameters()
 
@@ -59,7 +48,7 @@ class MyPointNetConv(MessagePassing):
         # Initialize quantization observers
         self.observer_input = Observer(num_bits=num_bits)
         self.observer_weight = Observer(num_bits=num_bits)
-        self.observer_output = Observer(num_bits=8)
+        self.observer_output = Observer(num_bits=num_bits)
 
         # Register buffers for quantization parameters
         self.register_buffer('m', torch.tensor(1.0, requires_grad=False))
@@ -71,42 +60,24 @@ class MyPointNetConv(MessagePassing):
         self.register_buffer('num_bits_scale', torch.tensor(self.num_bits_obs, requires_grad=False))
 
     def reset_parameters(self):
-        super().reset_parameters()
-        reset(self.local_nn)
-        reset(self.global_nn)
+        '''
+            Reset parameters of the model
+        '''
+        self.linear.reset_parameters()
+        self.norm.reset_parameters()
 
     def forward(
         self,
-        data: Data,
-    ) -> Tensor:
+        x: torch.Tensor,
+        pos: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
         
         '''
             Standard forward method of a PointNetConv layer
         '''
 
-        x = data.x
-        pos = data.pos
-        edge_index = data.edge_index
-
-        if not isinstance(x, tuple):
-            x = (x, x)
-
-        if isinstance(pos, Tensor):
-            pos = (pos, pos)
-
-        if self.add_self_loops:
-            if isinstance(edge_index, Tensor):
-                edge_index, _ = remove_self_loops(edge_index)
-                edge_index, _ = add_self_loops(
-                    edge_index, num_nodes=min(pos[0].size(0), pos[1].size(0)))
-            elif isinstance(edge_index, SparseTensor):
-                edge_index = torch_sparse.set_diag(edge_index)
-
-        # propagate_type: (x: PairOptTensor, pos: PairTensor)
-        out = self.propagate(edge_index, x=x, pos=pos)
-
-        if self.global_nn is not None:
-            out = self.global_nn(out)
+        out = self.message(x, pos, edge_index)
         
         # Apply activation function
         if self.use_relu:
@@ -118,120 +89,138 @@ class MyPointNetConv(MessagePassing):
 
         return out
 
-    def message(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
+    def message(self, x: torch.Tensor, pos: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         '''
             Custom message function for PointNetConv.
             We select the message function based on the current mode (calibration, quantize, or float)
         '''
-        if self.calib_mode and not self.quantize_mode:
-            return self.message_calib(x_i, x_j, pos_i, pos_j)
-        elif self.quantize_mode:
-            return self.message_quant(x_i, x_j, pos_i, pos_j)
-        elif not self.calib_mode and not self.quantize_mode:
-            return self.message_float(x_i, x_j, pos_i, pos_j)
+        if self.calib_mode.item() and not self.quantize_mode.item():
+            return self.message_calib(x, pos, edge_index)
+        elif self.quantize_mode.item():
+            return self.message_quant(x, pos, edge_index)
+        elif not self.calib_mode.item() and not self.quantize_mode.item():
+            return self.message_float(x, pos, edge_index)
         else:
             raise ValueError('Invalid mode')
 
-    def message_float(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
-        msg = pos_j - pos_i
+    def message_float(self, 
+                      x: torch.Tensor, 
+                      pos: torch.Tensor, 
+                      edge_index: torch.Tensor) -> torch.Tensor:
 
-        msg[:, 0] *= -50 # 1/radius_time [in seconds]
-        msg[:, 1] += 1/7 # radius_channel / num_channels
-        msg[:, 1] *= 7/2 # num_channels / (2*radius_channel)
+        '''Calculate message for PointNetConv layer.'''
+        pos_i = pos[edge_index[:, 0]]
+        pos_j = pos[edge_index[:, 1]]
+        x_j = x[edge_index[:, 1]]
+        msg = torch.cat((x_j, pos_j - pos_i), dim=1)
 
-        if x_j is not None:
-            msg = torch.cat([x_j, msg], dim=1)
-        if self.local_nn is not None:
-            msg = self.local_nn(msg)
-        return msg
+        '''Propagate message through linear layer.'''
+        msg = self.linear(msg)
+        msg = self.norm(msg)
 
-    def message_calib(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
-        msg = pos_j - pos_i
+        '''Update graph features.'''
+        unique_positions, indices = torch.unique(edge_index[:,0], dim=0, return_inverse=True)
+        expanded_indices = indices.unsqueeze(1).expand(-1, self.output_dim)
+        pooled_features = torch.zeros((unique_positions.size(0), self.output_dim), dtype=msg.dtype, device=x.device)
+        pooled_features = pooled_features.scatter_reduce(0, expanded_indices, msg, reduce="amax", include_self=False)
+        
+        '''Apply global neural network if defined.'''
+        if self.global_nn is not None:
+            pooled_features = self.global_nn(pooled_features)
 
-        msg[:, 0] *= -50 # 1/radius_time [in seconds]
-        msg[:, 1] += 1/7 # radius_channel / num_channels
-        msg[:, 1] *= 7/2 # num_channels / (2*radius_channel)
+        '''Apply batch normalization if defined.'''
+        # if self.norm is not None:
+        #     pooled_features = self.norm(pooled_features)
 
-        if x_j is not None:
-            msg = torch.cat([x_j, msg], dim=1)
+        return pooled_features
 
-        # Update input observer
-        if self.training:
+    def message_calib(self, 
+                      x: torch.Tensor, 
+                      pos: torch.Tensor, 
+                      edge_index: torch.Tensor) -> torch.Tensor:
+        
+        # gather messages
+        pos_i = pos[edge_index[:, 0]]
+        pos_j = pos[edge_index[:, 1]]
+        x_j = x[edge_index[:, 1]]
+        msg = torch.cat((x_j, pos_j - pos_i), dim=1)
+
+        # fake-quantize inputs
+        if self.use_observer_input:
             self.observer_input.update(msg)
-        msg = FakeQuantize.apply(msg, self.observer_input)
+            msg = FakeQuantize.apply(msg, self.observer_input)
 
-        # Simulate batch normalization during calibration
+        # if training, run a dummy through BN to update its stats
         if self.training:
-            y = torch.nn.functional.linear(msg, self.linear.weight, self.linear.bias)
-            _ = self.norm(y)
-        
-        # Merge batch normalization parameters with linear weights
-        mean = self.norm.running_mean
-        var = self.norm.running_var
-        std = torch.sqrt(var + self.norm.eps)
-        weight, bias = self.merge_norm(mean, std)
+            dummy = self.linear(msg)
+            _ = self.norm(dummy)
 
-        # Update weight observer
-        if self.training:
-            self.observer_weight.update(weight)
+        # fuse BN into linear weights/bias
+        running_mean = self.norm.running_mean
+        running_var = self.norm.running_var
+        std = torch.sqrt(running_var + self.norm.eps)
+        W_fused, b_fused = self.merge_norm(running_mean, std)
 
-        # Apply quantized weights
-        if self.local_nn is not None:
-            weight_q = FakeQuantize.apply(weight, self.observer_weight)
-            msg = F.linear(msg, weight_q, bias)
+        # fake-quantize fused weights
+        self.observer_weight.update(W_fused)
+        W_q = FakeQuantize.apply(W_fused, self.observer_weight)
 
-        # Update output observer
-        if self.training:
-            self.observer_output.update(msg)
-            self.observer_output.update(pos_j-pos_i) # Update observer for pos_j-pos_i to avoid quantization error
+        # apply quantized linear with fused bias
+        msg = F.linear(msg, W_q, b_fused)
 
+        '''Update output observer and calculate output.'''
+        '''We calibrate based on the output of the Linear and also for diff POS for next layer'''
+        self.observer_output.update(msg)
+        self.observer_output.update(pos_j-pos_i)
         msg = FakeQuantize.apply(msg, self.observer_output)
-        return msg
+
+        '''Update graph features.'''
+        unique_positions, indices = torch.unique(edge_index[:,0], dim=0, return_inverse=True)
+        expanded_indices = indices.unsqueeze(1).expand(-1, self.output_dim)
+        pooled_features = torch.zeros((unique_positions.size(0), self.output_dim), dtype=x.dtype, device=x.device)
+        pooled_features = pooled_features.scatter_reduce(0, expanded_indices, msg, reduce="amax", include_self=False)
+
+        return pooled_features
     
-    def message_quant(self, x_i: Optional[Tensor], x_j: Optional[Tensor], pos_i: Tensor, pos_j: Tensor) -> Tensor:
-        msg = pos_j - pos_i
+    def message_quant(self, 
+                      x: torch.Tensor, 
+                      pos: torch.Tensor, 
+                      edge_index: torch.Tensor) -> torch.Tensor:
 
-        msg[:, 0] *= -50 # 1/radius_time [in seconds]
-        msg[:, 1] += 1/7 # radius_channel / num_channels
-        msg[:, 1] *= 7/2 # num_channels / (2*radius_channel)
-
-        '''
-            Quantize input message, if first layer we need to quantize both x_j and pos differences
-            If not first layer, we quantize only the pos differences and concatenate with x_j
-        '''
-        
+        '''Quantize input features'''
         if self.first_layer:
-            msg = torch.cat([x_j, msg], dim=1)
+            '''We need to quantize both features and POS for the first layer.'''
+            pos_i = pos[edge_index[:, 0]]
+            pos_j = pos[edge_index[:, 1]]
+            x_j = x[edge_index[:, 1]]
+            msg = torch.cat((x_j, pos_j - pos_i), dim=1)
             msg = self.observer_input.quantize_tensor(msg)
-
         else:
-            msg = self.observer_input.quantize_tensor(msg)
-            msg = torch.cat([x_j, msg], dim=1)
+            '''For other layers, we only quantize POS, because features are already quantized.'''
+            pos_i = pos[edge_index[:, 0]]
+            pos_j = pos[edge_index[:, 1]]
+            pos = self.observer_input.quantize_tensor(pos_j - pos_i)
+            msg = torch.cat((x[edge_index[:, 1]], pos), dim=1)
+
         msg = msg - self.observer_input.zero_point
-
-        # Apply quantized linear layer
         msg = self.qlinear(msg)
+        msg = (msg * self.m).round() + self.observer_output.zero_point
+        msg = torch.clamp(msg, 0, 2**self.num_bits - 1)
 
-        # Requantize output message
-        msg = msg * self.m
-        msg = msg.round() 
-        msg = msg + self.observer_output.zero_point   
+        '''Update graph features.'''
+        unique_positions, indices = torch.unique(edge_index[:,0], dim=0, return_inverse=True)
+        expanded_indices = indices.unsqueeze(1).expand(-1, self.output_dim)
+        pooled_features = torch.zeros((unique_positions.size(0), self.output_dim), dtype=x.dtype, device=x.device)
+        pooled_features = pooled_features.scatter_reduce(0, expanded_indices, msg, reduce="amax", include_self=False)
 
-        # Clamp output message
-        msg = torch.clamp(msg, 0, 2**8-1)
-        msg = msg.round()
-
-        deq = self.observer_output.dequantize_tensor(msg)
-        return msg
+        return pooled_features
 
     def merge_norm(self,
                    mean: torch.Tensor,
                    std: torch.Tensor):
-        
         '''
             Merge batch normalization parameters with linear weights.
         '''
-
         if self.norm.affine:
             gamma = self.norm.weight
             beta = self.norm.bias
@@ -268,23 +257,19 @@ class MyPointNetConv(MessagePassing):
             self.observer_output = observer_output
 
         # Quantize scales for input, weight, and output
-        self.qscale_in = (2 ** self.num_bits_obs) * self.observer_input.scale
-        self.qscale_in = self.qscale_in.round()
+        self.qscale_in.copy_( (2**self.num_bits_obs * self.observer_input.scale).round() )
         self.observer_input.scale = self.qscale_in / (2 ** self.num_bits_obs)
 
-        self.qscale_w = (2 ** self.num_bits_obs) * self.observer_weight.scale
-        self.qscale_w = self.qscale_w.round()
+        self.qscale_w.copy_( (2**self.num_bits_obs * self.observer_weight.scale).round() )
         self.observer_weight.scale = self.qscale_w / (2 ** self.num_bits_obs)
 
-        self.qscale_out = (2 ** self.num_bits_obs) * self.observer_output.scale
-        self.qscale_out = self.qscale_out.round()
+        self.qscale_out.copy_( (2**self.num_bits_obs * self.observer_output.scale).round() )
         self.observer_output.scale = self.qscale_out / (2 ** self.num_bits_obs)
 
         # Compute scaling factor m
-        self.qscale_m = (self.observer_weight.scale * self.observer_input.scale) / self.observer_output.scale
-        self.qscale_m = self.qscale_m * (2 ** self.num_bits_obs)
-        self.qscale_m = self.qscale_m.round()
-        self.m = self.qscale_m / (2 ** self.num_bits_obs)
+        qscale_m = (self.observer_weight.scale * self.observer_input.scale) / self.observer_output.scale
+        self.qscale_m.copy_( (2**self.num_bits_obs * qscale_m).round() )
+        self.m.copy_(self.qscale_m / (2 ** self.num_bits_obs))
 
         # Merge batch normalization parameters
         std = torch.sqrt(self.norm.running_var + self.norm.eps)
@@ -292,7 +277,7 @@ class MyPointNetConv(MessagePassing):
 
         with torch.no_grad():
             # Initialize quantized linear layer
-            self.qlinear = Linear(self.input_dim, self.output_dim, bias=True)
+            self.qlinear = Linear(self.input_dim, self.output_dim, bias=True).to(self.linear.weight.device)
 
             # Quantize weights
             quantized_weight = self.observer_weight.quantize_tensor(weight)
@@ -308,9 +293,51 @@ class MyPointNetConv(MessagePassing):
                 signed=True,
             )
             self.qlinear.bias.copy_(quantized_bias)
-
-            self.qlinear.to(self.linear.weight.device)
     
+    def get_parameters(self,
+                       file_name: str = None):
+        
+        with open(file_name, 'w') as f:
+            '''Save scales and zero points to file.'''
+            f.write(f"Input scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_in)}\n")
+            f.write(f"Input zero point:\n {int(self.observer_input.zero_point)}\n")
+            f.write(f"Weight scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_w)}\n")
+            f.write(f"Weight zero point:\n {int(self.observer_weight.zero_point)}\n")
+            f.write(f"Output scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out)}\n")
+            f.write(f"Output zero point:\n {int(self.observer_output.zero_point)}\n")
+            f.write(f"M Scales ({int(self.num_bits_obs)} bit):\n {int(self.qscale_m)}\n")
+
+            '''Save weights and bias to file.'''
+            bias = torch.flip(self.qlinear.bias, [0])
+            bias = bias.detach().cpu().numpy().astype(np.int32).tolist()
+            weight = torch.flip(self.qlinear.weight, [1])
+            weight = weight.detach().cpu().numpy().astype(np.int32).tolist()
+            
+            f.write(f"Weight ({int(self.num_bits)} bit):\n")
+            for idx, w in enumerate(weight):
+                f.write(f"weights_conv[{idx}] = {str(w).replace('[', '{').replace(']', '}') + ';'}\n")
+
+            f.write(f"\nBias ({int(self.num_bits)} bit):\n")
+            f.write(f"bias_conv = {str(bias).replace('[', '{').replace(']', '}') + ';'}\n")
+
+            '''Save LUT for POS quantization to file.'''
+            input_range = list(range(int(self.observer_input.min), int(self.observer_input.max + 1)))
+            output_range = self.observer_input.quantize_tensor(torch.tensor(input_range).to(self.linear.weight.device)) - self.observer_input.zero_point
+            output_range = output_range.detach().cpu().numpy().astype(np.int32).tolist()
+
+            f.write(f"Input range ({int(self.num_bits)} bit):\n {input_range}\n")
+            f.write(f"Output range ({int(self.num_bits)} bit):\n {output_range}\n")
+        
+        with open(file_name.replace('.txt', '.mem'), 'w') as f:
+            for idx, we in enumerate(weight):
+                bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
+                # Concat to bin_vec binary repr of bias
+                bin_vec = bin_vec + [np.binary_repr(bias[len(bias)-idx-1], width=32)]
+                dlugi_ciag_bitow = ''.join(bin_vec)
+                wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
+                f.write(f"{str(wartosc_hex)[2:]}\n")
+
+
     def __repr__(self) -> str:
-        return (f'{self.__class__.__name__}(local_nn={self.local_nn}, '
+        return (f'{self.__class__.__name__}(local_nn={self.linear}, '
                 f'global_nn={self.global_nn}), num_bits={self.num_bits}')

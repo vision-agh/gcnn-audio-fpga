@@ -35,6 +35,8 @@ public:
             float sum_channel = 0;
             int sum_idx = 0;
 
+            edges.emplace_back(idx, idx); // Self-loop
+
             for (int n_channel = channel - static_cast<int>(channel_radius); 
                  n_channel <= channel + static_cast<int>(channel_radius); 
                  n_channel += skip_channels) 

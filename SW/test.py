@@ -1,37 +1,57 @@
 import yaml
 import dotmap
 import lightning as L
+import torch
 import argparse
 import multiprocessing as mp
-import torch
 
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from models.recognition import LNRecognition
 from data.spiking_digits import SpikingDigits
 
-best_model_path = "checkpoints/best_model-v2.ckpt"
-print(f"Best model saved at: {best_model_path}")
+import matplotlib.pyplot as plt
+import numpy as np
 
 cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
 cfg = dotmap.DotMap(cfg)
+cfg.train.batch_size = 1  # Set batch size to 1 for testing
 
 dm = SpikingDigits(cfg)
 dm.setup()
 
-model = LNRecognition(cfg)
-
-model.model.freeze()
-model.model.load_state_dict(torch.load('model.pth'))
+model = LNRecognition.load_from_checkpoint('checkpoints/best_model_float.ckpt', config=cfg)
 
 
-print(model.model.state_dict())
+for data in dm.val_dataloader():
 
-trainer = L.Trainer(max_epochs=1, 
-                        log_every_n_steps=1, 
-                        gradient_clip_val=0.0,
-                        # logger=wandb_logger,
-                        # callbacks=[lr_monitor, checkpoint_callback],
-                        deterministic=True)
+    for key in data:
+        if isinstance(data[key], torch.Tensor):
+            data[key] = data[key].to(model.device)
+    output, cls = model(data)
+    print(cls.shape)
+    for i in range(cls.shape[2]):
+        print(f"Class {i}: {torch.softmax(cls[:,:,i], dim=1)}")
 
-trainer.test(model, datamodule=dm)
+    print(data['y'])
+    output = torch.sigmoid(output)  # Apply sigmoid activation to the output
+    print(output.shape)  # Should print the shape of the output tensor
+    pos = data['pos'].cpu().numpy()
+
+    # Visualize the positions
+    plt.scatter(pos[:, 0], pos[:, 1], s=1, alpha=0.5)
+    plt.title('Spiking Digits Positions')
+    plt.xlabel('Time')
+    plt.ylabel('Unit')
+
+    # visualise the output
+    output_np = output.cpu().detach().numpy()
+    # create vec of time steps (from 0 to 1 for each 20 sample)
+    vec_time = np.linspace(0, 1, output_np.shape[1])
+    plt.plot(vec_time, output_np[0], label='Model Output', color='red')
+    plt.title('Model Output')
+    plt.xlabel('Time')
+    plt.ylabel('Output Value')
+    plt.legend()
+    plt.show()  # Use block=False to avoid blocking the script
+

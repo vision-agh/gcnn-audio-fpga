@@ -35,7 +35,7 @@ def main():
     checkpoint_callback = ModelCheckpoint(
         dirpath='checkpoints',
         filename='best_model_float',
-        monitor='val_acc',
+        monitor='val_ts_acc',
         mode='max',
         save_top_k=1
     )
@@ -45,7 +45,7 @@ def main():
                         gradient_clip_val=0.0,
                         logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
-                        deterministic=True)
+                        deterministic=False)
 
 
     trainer.fit(model, dm)

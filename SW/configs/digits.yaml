@@ -1,6 +1,6 @@
 general:
   name: Spiking_Heidelberg_Digits
-  data_dir: datasets/hdspikes
+  data_dir: /home/imperator/Datasets/hdspikes
 
   time_window: 1000000 # 1 second
   num_channels: 700 # number of frequency channels
@@ -16,7 +16,7 @@ graph:
   features: global # local, global or None
 
 train:
-  batch_size: 16
+  batch_size: 4
   num_workers: 8
   num_epochs: 100
   lr: 0.0002
@@ -29,7 +29,7 @@ model:
   conv_bits: [16, 8, 8, 8]
 
   linear_channels: 64
-  global_pooling: mean # mean, max or add
+  global_pooling: max # mean, max or add
 
 
 

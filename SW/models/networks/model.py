@@ -1,12 +1,10 @@
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, PointNetConv, GATConv, GATv2Conv, GINConv, GAT, GIN, global_mean_pool, \
-    global_add_pool, global_max_pool, SplineConv, BatchNorm, PairNorm
-from torch.nn import Module, ModuleList, Linear, Dropout, Sequential
+from torch.nn import Module, ModuleList, Linear, Dropout, Sequential, Conv1d
 
 
 from models.networks.layers.my_pointnet import MyPointNetConv
-from models.networks.layers.my_pooling import MyGlobalPooling
+from models.networks.layers.my_pooling_moving import MyMovingGlobalPooling
 
 
 class GCN(Module):
@@ -29,24 +27,29 @@ class GCN(Module):
         self.conv3 = MyPointNetConv(conv_ch[1]+2, conv_ch[2], bias=False, num_bits=conv_bits[2])
         self.conv4 = MyPointNetConv(conv_ch[2]+2, conv_ch[3], bias=False, num_bits=conv_bits[3])
         
-        self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=conv_bits[3])
+        self.pooling = MyMovingGlobalPooling(config.model.global_pooling, num_bits=conv_bits[3])
 
         self.fc1 = Linear(conv_ch[3], linear_ch)
-        self.fc2 = Linear(linear_ch, num_classes)
+        self.fc2 = Linear(linear_ch, linear_ch)
+
+        self.conf = Conv1d(linear_ch, 1, kernel_size=1, stride=1, padding=0, bias=True)
+        self.cls = Conv1d(linear_ch, num_classes+1, kernel_size=5, stride=1, padding=2, bias=True)
 
 
     def forward(self, data):
         outputs = []
 
-        data.x = self.conv1(data)
-        outputs.append(data.x)
-        data.x = self.conv2(data)
-        outputs.append(data.x)
-        data.x = self.conv3(data)
-        outputs.append(data.x)
-        data.x = self.conv4(data)
-        outputs.append(data.x)
-        x = self.pooling(data, self.conv4.observer_output)
+        x, pos, edge_index, batch = data['x'], data['pos'], data['edge_index'], data['batch']
+
+        x = self.conv1(x, pos, edge_index)
+        outputs.append(x)
+        x = self.conv2(x, pos, edge_index)
+        outputs.append(x)
+        x = self.conv3(x, pos, edge_index)
+        outputs.append(x)
+        x = self.conv4(x, pos, edge_index)
+        outputs.append(x)
+        x = self.pooling(x, pos, batch, self.conv4.observer_output)
         outputs.append(x)
 
         x = self.fc1(x)
@@ -54,9 +57,17 @@ class GCN(Module):
         outputs.append(x)
         # x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)
+        x = torch.relu(x)
         outputs.append(x)
 
-        return x, outputs
+        x = x.permute(0, 2, 1)  # change shape to (B, C, T) for Conv1d
+        conf = self.conf(x)
+        conf = conf.squeeze(1)
+
+        cls = self.cls(x)
+        cls = cls.squeeze(1)
+
+        return conf, cls
     
     def calibrate(self):
         self.conv1.calibrate()
