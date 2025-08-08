@@ -51,7 +51,7 @@ def main():
     trainer.fit(model, dm)
     best_model_path = checkpoint_callback.best_model_path
     print(f"\nBest float model saved at: {best_model_path}\n")
-    model = LNRecognition.load_from_checkpoint(best_model_path)
+    model = LNRecognition.load_from_checkpoint(best_model_path, config=cfg)
     trainer.test(model, datamodule=dm)
 
 
@@ -67,18 +67,18 @@ def main():
         save_top_k=1
     )
 
-    trainer = L.Trainer(max_epochs=20,
+    trainer = L.Trainer(max_epochs=1,
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
                         # logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
-                        deterministic=True)
+                        deterministic=False)
     
     model.model.calibrate()
     trainer.fit(model, dm)
     best_model_path = checkpoint_callback.best_model_path
     print(f"\nBest model saved at: {best_model_path}\n")
-    model = LNRecognition.load_from_checkpoint(best_model_path)
+    model = LNRecognition.load_from_checkpoint(best_model_path, config=cfg)
 
     trainer.test(model, datamodule=dm)
 

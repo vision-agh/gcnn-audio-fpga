@@ -68,10 +68,20 @@ class MyGRUCell(nn.Module):
         self.register_buffer('tanh_domain',    torch.arange(max_lin, dtype=torch.float32, device=self.linear_ih.weight.device))
         self.register_buffer('rescale_domain', torch.arange(2**self.output_observer_r_hn.num_bits, dtype=torch.float32, device=self.linear_ih.weight.device))
 
+        # Register buffers for scale and zero point
+        self.register_buffer('scale_ih', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_hh', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_r_hn', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_z_n', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_z_h', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_new_h_zn', torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_new_h_zh', torch.tensor(1.0, requires_grad=False))
+
+        self.register_buffer('quant_1', torch.tensor(1.0, requires_grad=False))
+
         '''Modes for calibration and quantization'''
         self.register_buffer('calib_mode', torch.tensor(False, requires_grad=False))
         self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
-
 
     def reset_parameters(self) -> None:
         """
@@ -111,6 +121,70 @@ class MyGRUCell(nn.Module):
             self.observer_input = observer_input
         if observer_output is not None:
             self.observer_output = observer_output
+
+        # Quantize the input layer
+        q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) \
+                                    - self.weight_ih_observer.zero_point
+        
+        q_bias_ih = quantize_tensor(self.linear_ih.bias, 
+                                    scale=self.weight_ih_observer.scale * self.observer_input.scale,
+                                    zero_point=0,
+                                    num_bits=32,
+                                    signed=True)
+        
+        self.linear_ih.weight = nn.Parameter(q_weight_ih)
+        self.linear_ih.bias = nn.Parameter(q_bias_ih)
+
+        self.scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) \
+                        / self.output_linear_observer.scale
+        
+        # Quantize the hidden layer
+        q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) \
+                                    - self.weight_hh_observer.zero_point
+        
+        q_bias_hh = quantize_tensor(self.linear_hh.bias, 
+                                    scale=self.weight_hh_observer.scale * self.observer_hidden.scale,
+                                    zero_point=0,
+                                    num_bits=32,
+                                    signed=True)
+        
+        self.linear_hh.weight = nn.Parameter(q_weight_hh)
+        self.linear_hh.bias = nn.Parameter(q_bias_hh)
+        
+        scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) \
+                    / self.output_linear_observer.scale
+        
+        self.scale_hh = scale_hh
+
+        scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) \
+                    / self.output_observer_r_hn.scale
+        
+        self.scale_r_hn = scale_r_hn
+
+
+        quant_1 = quantize_tensor(1,
+                                scale=self.output_observer_sigmoid_z.scale,
+                                zero_point=self.output_observer_sigmoid_z.zero_point,
+                                num_bits=self.output_observer_sigmoid_z.num_bits)
+        
+        self.quant_1 = quant_1
+
+        scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) \
+                    / self.output_observer_z_n.scale
+        
+        self.scale_z_n = scale_z_n
+        
+        scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) \
+                    / self.output_observer_z_h.scale
+        
+        self.scale_z_h = scale_z_h
+
+
+        scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
+        scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
+
+        self.scale_new_h_zn = scale_new_h_zn
+        self.scale_new_h_zh = scale_new_h_zh
 
 
     def forward_float(self, 
@@ -294,50 +368,52 @@ class MyGRUCell(nn.Module):
             torch.Tensor: New hidden state tensor of shape (batch_size, hidden_size).
         """
         # Quantize the input
-        x = self.observer_input.quantize_tensor(x)
+        # x = self.observer_input.quantize_tensor(x)
 
         # Quantize the weights and compute the input layer
         # Weights quantization
-        q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) \
-                                    - self.weight_ih_observer.zero_point
+        # q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) \
+        #                             - self.weight_ih_observer.zero_point
         
-        q_bias_ih = quantize_tensor(self.linear_ih.bias, 
-                                    scale=self.weight_ih_observer.scale * self.observer_input.scale,
-                                    zero_point=0,
-                                    num_bits=32,
-                                    signed=True)
+        # q_bias_ih = quantize_tensor(self.linear_ih.bias, 
+        #                             scale=self.weight_ih_observer.scale * self.observer_input.scale,
+        #                             zero_point=0,
+        #                             num_bits=32,
+        #                             signed=True)
 
-        scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) \
-                                    / self.output_linear_observer.scale
+        # scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) \
+        #                             / self.output_linear_observer.scale
         
         # Compute the input layer
-        gate_x = F.linear(x - self.observer_input.zero_point, 
-                                    q_weight_ih, 
-                                    q_bias_ih)
-
-        gate_x = (gate_x * scale_ih).round()
+        # gate_x = F.linear(x - self.observer_input.zero_point, 
+        #                             q_weight_ih, 
+        #                             q_bias_ih)
+        gate_x = self.linear_ih(x - self.observer_input.zero_point)
+        gate_x = (gate_x * self.scale_ih).round()
         gate_x = gate_x + self.output_linear_observer.zero_point
         gate_x = gate_x.clamp(0, 2**self.output_linear_observer.num_bits - 1)
 
         # Quantize the weights and compute the hidden layer
         # Weights quantization
-        q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) \
-                                    - self.weight_hh_observer.zero_point
+        # q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) \
+        #                             - self.weight_hh_observer.zero_point
         
-        q_bias_hh = quantize_tensor(self.linear_hh.bias, 
-                                    scale=self.weight_hh_observer.scale * self.observer_hidden.scale,
-                                    zero_point=0,
-                                    num_bits=32,
-                                    signed=True)
+        # q_bias_hh = quantize_tensor(self.linear_hh.bias, 
+        #                             scale=self.weight_hh_observer.scale * self.observer_hidden.scale,
+        #                             zero_point=0,
+        #                             num_bits=32,
+        #                             signed=True)
         
-        scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) \
-                    / self.output_linear_observer.scale
+        # scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) \
+        #             / self.output_linear_observer.scale
         
         # Compute the hidden layer
-        gate_h = F.linear(h - self.observer_hidden.zero_point, 
-                                    q_weight_hh, 
-                                    q_bias_hh)
-        gate_h = (gate_h * scale_hh).round()
+        # gate_h = F.linear(h - self.observer_hidden.zero_point, 
+        #                             q_weight_hh, 
+        #                             q_bias_hh)
+
+        gate_h = self.linear_hh(h - self.observer_hidden.zero_point)
+        gate_h = (gate_h * self.scale_hh).round()
         gate_h = gate_h + self.output_linear_observer.zero_point
         gate_h = gate_h.clamp(0, 2**self.output_linear_observer.num_bits - 1)
 
@@ -354,10 +430,10 @@ class MyGRUCell(nn.Module):
         z = self.lut_sigmoid_z[z]
 
         # New gate multiplication
-        scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) \
-                    / self.output_observer_r_hn.scale
+        # scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) \
+        #             / self.output_observer_r_hn.scale
         r_hn = (r-self.output_observer_sigmoid_r.zero_point) * (h_n - self.output_linear_observer.zero_point)
-        r_hn = (r_hn * scale_r_hn).round()
+        r_hn = (r_hn * self.scale_r_hn).round()
         r_hn = r_hn + self.output_observer_r_hn.zero_point
         r_hn = r_hn.clamp(0, 2**self.output_observer_r_hn.num_bits - 1)
 
@@ -368,34 +444,34 @@ class MyGRUCell(nn.Module):
 
         # New hidden state
         # Difference
-        quant_1 = quantize_tensor(1,
-                                scale=self.output_observer_sigmoid_z.scale,
-                                zero_point=self.output_observer_sigmoid_z.zero_point,
-                                num_bits=self.output_observer_sigmoid_z.num_bits)
-        z_diff = quant_1 - z
+        # quant_1 = quantize_tensor(1,
+        #                         scale=self.output_observer_sigmoid_z.scale,
+        #                         zero_point=self.output_observer_sigmoid_z.zero_point,
+        #                         num_bits=self.output_observer_sigmoid_z.num_bits)
+        z_diff = self.quant_1 - z
 
         # Hammard product (1-z) * n
-        scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) \
-                    / self.output_observer_z_n.scale
+        # scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) \
+        #             / self.output_observer_z_n.scale
         
         z_n = (z_diff-self.output_observer_sigmoid_z.zero_point) * (n - self.output_observer_tanh_n.zero_point)
-        z_n = (z_n * scale_z_n).round()
+        z_n = (z_n * self.scale_z_n).round()
         z_n = z_n + self.output_observer_z_n.zero_point
         z_n = z_n.clamp(0, 2**self.output_observer_z_n.num_bits - 1)
 
         # Hammard product z * h
-        scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) \
-                    / self.output_observer_z_h.scale
+        # scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) \
+        #             / self.output_observer_z_h.scale
         z_h = (z-self.output_observer_sigmoid_z.zero_point) * (h - self.observer_hidden.zero_point)
-        z_h = (z_h * scale_z_h).round()
+        z_h = (z_h * self.scale_z_h).round()
         z_h = z_h + self.output_observer_z_h.zero_point
         z_h = z_h.clamp(0, 2**self.output_observer_z_h.num_bits - 1)
 
         # New hidden state
-        scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
-        scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
-        new_h = (z_n - self.output_observer_z_n.zero_point) * scale_new_h_zn \
-                + (z_h - self.output_observer_z_h.zero_point) * scale_new_h_zh
+        # scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
+        # scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
+        new_h = (z_n - self.output_observer_z_n.zero_point) * self.scale_new_h_zn \
+                + (z_h - self.output_observer_z_h.zero_point) * self.scale_new_h_zh
         new_h = new_h.round()
         new_h = new_h + self.observer_hidden.zero_point
         new_h = new_h.clamp(0, 2**self.observer_hidden.num_bits - 1)

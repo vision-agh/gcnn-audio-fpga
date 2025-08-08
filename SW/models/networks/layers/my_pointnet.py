@@ -17,6 +17,7 @@ class MyPointNetConv(nn.Module):
         bias: bool = False,
         num_bits: int = 8,
         first_layer: bool = False,
+        input_bits: int = 8
     ):
         
         super(MyPointNetConv, self).__init__()
@@ -46,7 +47,7 @@ class MyPointNetConv(nn.Module):
         self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
 
         # Initialize quantization observers
-        self.observer_input = Observer(num_bits=num_bits)
+        self.observer_input = Observer(num_bits=input_bits)
         self.observer_weight = Observer(num_bits=num_bits)
         self.observer_output = Observer(num_bits=num_bits)
 

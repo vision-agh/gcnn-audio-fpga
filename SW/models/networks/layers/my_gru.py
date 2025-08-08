@@ -23,7 +23,7 @@ class MyGRU(nn.Module):
         
         if h is None:
             if self.gru.quantize_mode.item():
-                h = torch.full((x.size(0), self.hidden_size), self.gru.hidden_observer.zero_point, device=x.device, dtype=torch.int32)
+                h = torch.full((x.size(0), self.hidden_size), self.gru.observer_hidden.zero_point, device=x.device, dtype=torch.int32)
             else:
                 h = torch.full((x.size(0), self.hidden_size), 0.0, device=x.device)
         
