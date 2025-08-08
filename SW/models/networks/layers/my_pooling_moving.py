@@ -16,21 +16,61 @@ def global_add_pool(x: Tensor,
     return out
 
 
-def global_mean_pool(x: Tensor, 
-                           pos: Tensor,
-                           batch: Tensor) -> Tensor:
-    # sum then divide by counts
+def global_mean_pool(x: Tensor,        # [N, F]
+    pos: Tensor,      # [N, 2]  – pos[:, 0] is time in seconds
+    batch: Tensor,    # [N]     – values 0 … B-1
+    step: float = 0.01
+) -> Tensor:
+    """
+    Divide each sample’s events into T = int(1/step) time bins and perform
+    max-pooling inside every bin separately for every batch.
+    Returns a tensor of shape [B, T, F].
+
+    The implementation is *purely* out-of-place: no tensor is modified after
+    construction, so it is autograd-friendly and side-effect-free.
+    """
+
+    # 1) static parameters
+    T = int(1.0 / step)
     B = int(batch.max().item()) + 1
-    out_sum = x.new_zeros((B, x.size(1)))
-    out_sum = out_sum.index_add(0, batch, x)
-    counts = torch.bincount(batch, minlength=B).unsqueeze(1).to(x.dtype)
-    out = out_sum / counts.clamp(min=1)
-    return out
+    F = x.size(1)
 
+    # 2) time-bin index for every event  ➜ [N] in 0 … T-1
+    idx = (pos[:, 0] / step).floor().long()
 
-import torch
-from torch import Tensor
+    # 3) flatten (batch, time) ⇒ single axis 0 … B·T-1
+    flat_idx = batch * T + idx
 
+    # 4) tensor filled with −∞, used as “identity” for max
+    pooled_flat = torch.full(
+        (B * T, F),
+        fill_value=0,
+        dtype=x.dtype,
+        device=x.device,
+    )
+
+    # 5) broadcast indices to match feature dimension  ➜ [N, F]
+    idx_expanded = flat_idx.unsqueeze(1).expand(-1, F)
+
+    # 6) scatter-reduce (mean) – out-of-place
+    pooled_flat = torch.scatter_reduce(
+        pooled_flat,
+        dim=0,
+        index=idx_expanded,
+        src=x,
+        reduce="mean",
+        include_self=True,
+    )  # shape [B·T, F]
+
+    # 7) replace untouched bins (still −∞) with 0 – out-of-place “where”
+    pooled_flat = torch.where(
+        pooled_flat == -float("inf"),
+        torch.ones_like(pooled_flat) * (-100.0),
+        pooled_flat,
+    )
+
+    # 8) reshape back to [B, T, F] – view/reshape is fine, no data is mutated
+    return pooled_flat.view(B, T, F)
 
 def global_max_pool(
     x: Tensor,        # [N, F]

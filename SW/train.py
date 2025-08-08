@@ -19,8 +19,8 @@ def main():
 
     model = LNRecognition(cfg)
 
-    wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking')
-    wandb_logger.watch(model)
+    # wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking')
+    # wandb_logger.watch(model)
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
@@ -40,10 +40,10 @@ def main():
         save_top_k=1
     )
 
-    trainer = L.Trainer(max_epochs=100, 
+    trainer = L.Trainer(max_epochs=1, 
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
-                        logger=wandb_logger,
+                        # logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=False)
 
@@ -70,7 +70,7 @@ def main():
     trainer = L.Trainer(max_epochs=20,
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
-                        logger=wandb_logger,
+                        # logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=True)
     

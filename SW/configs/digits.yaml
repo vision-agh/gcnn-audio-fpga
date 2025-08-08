@@ -28,7 +28,18 @@ model:
   conv_channels: [64, 64, 64, 64]
   conv_bits: [16, 8, 8, 8]
 
-  linear_channels: 64
+  stem_channels: 64
+  stem_bits: 8
+
+  rnn_channels: 64
+  rnn_bits: 8
+
+  cls_linear_channels: 64
+  cls_linear_bits: 8
+
+  conf_linear_channels: 64
+  conf_linear_bits: 8
+
   global_pooling: max # mean, max or add
 
 

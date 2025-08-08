@@ -1,10 +1,12 @@
 import torch
 import torch.nn.functional as F
-from torch.nn import Module, ModuleList, Linear, Dropout, Sequential, Conv1d
+from torch.nn import Module
 
 
+from models.networks.layers.my_linear import MyLinear
 from models.networks.layers.my_pointnet import MyPointNetConv
 from models.networks.layers.my_pooling_moving import MyMovingGlobalPooling
+from models.networks.layers.my_gru import MyGRU
 
 
 class GCN(Module):
@@ -17,7 +19,20 @@ class GCN(Module):
         conv_ch = config.model.conv_channels
         conv_bits = config.model.conv_bits
 
-        linear_ch = config.model.linear_channels
+        pooling_op = config.model.global_pooling
+
+        stem_ch = config.model.stem_channels
+        stem_bits = config.model.stem_bits
+
+        rnn_ch = config.model.rnn_channels
+        rnn_bits = config.model.rnn_bits
+
+        cls_linear_ch = config.model.cls_linear_channels
+        cls_linear_bits = config.model.cls_linear_bits
+
+        conf_linear_ch = config.model.conf_linear_channels
+        conf_linear_bits = config.model.conf_linear_bits
+
         num_classes = config.model.num_classes
 
         input_dim = 2 if config.graph.features else 0
@@ -27,45 +42,38 @@ class GCN(Module):
         self.conv3 = MyPointNetConv(conv_ch[1]+2, conv_ch[2], bias=False, num_bits=conv_bits[2])
         self.conv4 = MyPointNetConv(conv_ch[2]+2, conv_ch[3], bias=False, num_bits=conv_bits[3])
         
-        self.pooling = MyMovingGlobalPooling(config.model.global_pooling, num_bits=conv_bits[3])
+        self.pooling = MyMovingGlobalPooling(pooling_op, num_bits=conv_bits[3])
 
-        self.fc1 = Linear(conv_ch[3], linear_ch)
-        self.fc2 = Linear(linear_ch, linear_ch)
+        self.fc1 = MyLinear(conv_ch[3], stem_ch, bias= True, num_bits=stem_bits)
+        self.fc2 = MyLinear(stem_ch, stem_ch, bias=True, num_bits=stem_bits)
 
-        self.conf = Conv1d(linear_ch, 1, kernel_size=1, stride=1, padding=0, bias=True)
-        self.cls = Conv1d(linear_ch, num_classes+1, kernel_size=5, stride=1, padding=2, bias=True)
+        self.rnn = MyGRU(input_size=stem_ch, hidden_size=rnn_ch, num_bits=rnn_bits)
 
+        self.cls = MyLinear(cls_linear_ch, num_classes, bias=True, num_bits=cls_linear_bits)
+        self.conf = MyLinear(conf_linear_ch, 1, bias=True, num_bits=conf_linear_bits)
 
     def forward(self, data):
-        outputs = []
-
         x, pos, edge_index, batch = data['x'], data['pos'], data['edge_index'], data['batch']
 
         x = self.conv1(x, pos, edge_index)
-        outputs.append(x)
         x = self.conv2(x, pos, edge_index)
-        outputs.append(x)
         x = self.conv3(x, pos, edge_index)
-        outputs.append(x)
         x = self.conv4(x, pos, edge_index)
-        outputs.append(x)
+
         x = self.pooling(x, pos, batch, self.conv4.observer_output)
-        outputs.append(x)
 
         x = self.fc1(x)
         x = torch.relu(x)
-        outputs.append(x)
-        # x = F.dropout(x, p=0.5, training=self.training)
         x = self.fc2(x)
         x = torch.relu(x)
-        outputs.append(x)
 
-        x = x.permute(0, 2, 1)  # change shape to (B, C, T) for Conv1d
+        x = self.rnn(x)[0]
+
         conf = self.conf(x)
-        conf = conf.squeeze(1)
+        conf = conf.squeeze(2)
 
         cls = self.cls(x)
-        cls = cls.squeeze(1)
+        cls = cls.permute(0, 2, 1)
 
         return conf, cls
     
@@ -75,6 +83,11 @@ class GCN(Module):
         self.conv3.calibrate()
         self.conv4.calibrate()
         self.pooling.calibrate()
+        self.fc1.calibrate()
+        self.fc2.calibrate()
+        self.rnn.calibrate()    
+        self.cls.calibrate()
+        self.conf.calibrate()
 
     def quantize(self):
         self.conv1.quantize()
