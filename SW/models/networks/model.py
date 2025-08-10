@@ -38,7 +38,7 @@ class GCN(Module):
 
         input_dim = 2 if config.graph.features else 0
         
-        self.conv1 = MyPointNetConv(input_dim+2, conv_ch[0], bias=False, input_bits=16, num_bits=8, first_layer=True)
+        self.conv1 = MyPointNetConv(input_dim+2, conv_ch[0], bias=False, input_bits=8, num_bits=8, first_layer=True)
         self.conv2 = MyPointNetConv(conv_ch[0]+2, conv_ch[1], bias=False, num_bits=conv_bits[1])
         self.conv3 = MyPointNetConv(conv_ch[1]+2, conv_ch[2], bias=False, num_bits=conv_bits[2])
         self.conv4 = MyPointNetConv(conv_ch[2]+2, conv_ch[3], bias=False, num_bits=conv_bits[3])
@@ -49,7 +49,6 @@ class GCN(Module):
         self.fc2 = MyLinear(stem_ch, stem_ch, bias=True, num_bits=stem_bits)
 
         self.rnn = MyGRU(input_size=stem_ch, hidden_size=rnn_ch, num_bits=rnn_bits)
-        # self.rnn.compile()
 
         self.cls = MyLinear(cls_linear_ch, num_classes, bias=True, num_bits=cls_linear_bits)
         self.conf = MyLinear(conf_linear_ch, 1, bias=True, num_bits=conf_linear_bits)
@@ -62,10 +61,7 @@ class GCN(Module):
         x, pos, edge_index, batch = data['x'], data['pos'], data['edge_index'], data['batch']
 
         x = self.conv1(x, pos, edge_index)
-        # if self.quantize_mode.item():
-        #     print(self.conv1.observer_output.dequantize_tensor(x))
-        # else:
-        #     print(x)
+        x1 = x.clone()  # Save the output of the first conv layer for observer input
         x = self.conv2(x, pos, edge_index)
         x = self.conv3(x, pos, edge_index)
         x = self.conv4(x, pos, edge_index)
@@ -100,7 +96,7 @@ class GCN(Module):
             conf = self.conf.observer_output.dequantize_tensor(conf)
             cls = self.cls.observer_output.dequantize_tensor(cls)
 
-        return conf, cls
+        return conf, cls, x1
     
     def calibrate(self):
         self.calib_mode.fill_(True)

@@ -19,8 +19,8 @@ def main():
 
     model = LNRecognition(cfg)
 
-    # wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking')
-    # wandb_logger.watch(model)
+    wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking')
+    wandb_logger.watch(model)
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
@@ -40,24 +40,32 @@ def main():
         save_top_k=1
     )
 
-    trainer = L.Trainer(max_epochs=1, 
+    trainer = L.Trainer(max_epochs=100, 
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
-                        # logger=wandb_logger,
+                        logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=False)
 
 
-    trainer.fit(model, dm)
-    best_model_path = checkpoint_callback.best_model_path
+    # trainer.fit(model, dm)
+    # best_model_path = checkpoint_callback.best_model_path
+    best_model_path = 'checkpoints/best_model_float.ckpt'
     print(f"\nBest float model saved at: {best_model_path}\n")
     model = LNRecognition.load_from_checkpoint(best_model_path, config=cfg)
-    trainer.test(model, datamodule=dm)
+    # trainer.test(model, datamodule=dm)
+
+    wandb_logger.experiment.finish()
 
 
     print(" \n#####################################################################################")
     print("############################### TRAINING QAT MODEL ################################")
     print("#####################################################################################\n")
+
+    cfg.train.lr = 0.00001
+    wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking_qat')
+    wandb_logger.watch(model)
+    lr_monitor = LearningRateMonitor(logging_interval='step')
 
     checkpoint_callback = ModelCheckpoint(
         dirpath='checkpoints',
@@ -70,17 +78,18 @@ def main():
     trainer = L.Trainer(max_epochs=1,
                         log_every_n_steps=1, 
                         gradient_clip_val=0.0,
-                        # logger=wandb_logger,
+                        logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
                         deterministic=False)
     
     model.model.calibrate()
-    trainer.fit(model, dm)
-    best_model_path = checkpoint_callback.best_model_path
+    # trainer.fit(model, dm)
+    # best_model_path = checkpoint_callback.best_model_path
+    best_model_path = 'checkpoints/best_model_calibrated.ckpt'
     print(f"\nBest model saved at: {best_model_path}\n")
     model = LNRecognition.load_from_checkpoint(best_model_path, config=cfg)
 
-    trainer.test(model, datamodule=dm)
+    # trainer.test(model, datamodule=dm)
 
     print(" \n#####################################################################################")
     print("############################### QUANTIZING MODEL ################################")

@@ -19,7 +19,7 @@ class MyGRU(nn.Module):
         self,
         x: torch.Tensor,
         h: torch.Tensor = None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         
         if h is None:
             if self.gru.quantize_mode.item():

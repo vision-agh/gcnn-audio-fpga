@@ -184,7 +184,7 @@ class MyMovingGlobalPooling(nn.Module):
         else:
             pooled_flat = torch.where(
                 pooled_flat == -float("inf"),
-                torch.ones_like(pooled_flat) * (-100.0),
+                torch.ones_like(pooled_flat) * (0.0),
                 pooled_flat,
             )
 

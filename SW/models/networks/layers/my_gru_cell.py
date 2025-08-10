@@ -3,20 +3,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.networks.layers.quantisation.observer import Observer, FakeQuantize, quantize_tensor, dequantize_tensor
+from models.networks.layers.quantisation.observer import (
+    Observer, FakeQuantize, quantize_tensor, dequantize_tensor
+)
 
 
 class MyGRUCell(nn.Module):
-    def __init__(self, 
-                 input_size:int, 
-                 hidden_size:int,
-                 num_bits:int = 8):
+    def __init__(self,
+                 input_size: int,
+                 hidden_size: int,
+                 num_bits: int = 8):
         super(MyGRUCell, self).__init__()
         """
-        Initialize the GRU cell with input size and hidden size.
-        Args:
-            input_size (int): Size of the input features.
-            hidden_size (int): Size of the hidden state.
+        GRU cell with observers for post-training quantization.
+        This version makes CALIBRATION fast by collecting stats only (no per-step fake quant / LUT builds).
         """
 
         self.input_size = input_size
@@ -40,65 +40,57 @@ class MyGRUCell(nn.Module):
 
         self.output_linear_observer = Observer(num_bits=num_bits)
 
-        # Observer for sigmoid
+        # Observer for sigmoid outs
         self.output_observer_sigmoid_r = Observer(num_bits=num_bits)
         self.output_observer_sigmoid_z = Observer(num_bits=num_bits)
 
-        # Observer for tanh
+        # Observer for tanh out
         self.output_observer_tanh_n = Observer(num_bits=num_bits)
 
-        # Observer for r * h_n
+        # Observers for intermediate products
         self.output_observer_r_hn = Observer(num_bits=num_bits)
-        self.output_observer_z_n = Observer(num_bits=num_bits)
-        self.output_observer_z_h = Observer(num_bits=num_bits)
+        self.output_observer_z_n  = Observer(num_bits=num_bits)
+        self.output_observer_z_h  = Observer(num_bits=num_bits)
 
-        # Registers
-        self.register_buffer('lut_sigmoid_r', 
-                                torch.zeros(2**(num_bits+1), dtype=torch.float32))
-        self.register_buffer('lut_sigmoid_z',
-                                torch.zeros(2**(num_bits+1), dtype=torch.float32))
-        self.register_buffer('lut_tanh_n',
-                                torch.zeros(2**(num_bits+1), dtype=torch.float32))
-        self.register_buffer('lut_rescale_i_n',
-                                torch.zeros(2**(num_bits), dtype=torch.float32))
-        
-        # Pre-allocate domains
-        max_lin = 2**(self.output_observer_sigmoid_r.num_bits+1)
-        self.register_buffer('sigmoid_domain', torch.arange(max_lin, dtype=torch.float32, device=self.linear_ih.weight.device))
-        self.register_buffer('tanh_domain',    torch.arange(max_lin, dtype=torch.float32, device=self.linear_ih.weight.device))
-        self.register_buffer('rescale_domain', torch.arange(2**self.output_observer_r_hn.num_bits, dtype=torch.float32, device=self.linear_ih.weight.device))
+        # LUTs
+        self.register_buffer('lut_sigmoid_r',    torch.zeros(2 ** (num_bits + 1), dtype=torch.float32))
+        self.register_buffer('lut_sigmoid_z',    torch.zeros(2 ** (num_bits + 1), dtype=torch.float32))
+        self.register_buffer('lut_tanh_n',       torch.zeros(2 ** (num_bits + 1), dtype=torch.float32))
+        self.register_buffer('lut_rescale_i_n',  torch.zeros(2 ** num_bits,       dtype=torch.float32))
 
-        # Register buffers for scale and zero point
-        self.register_buffer('scale_ih', torch.tensor(1.0, requires_grad=False))
-        self.register_buffer('scale_hh', torch.tensor(1.0, requires_grad=False))
-        self.register_buffer('scale_r_hn', torch.tensor(1.0, requires_grad=False))
-        self.register_buffer('scale_z_n', torch.tensor(1.0, requires_grad=False))
-        self.register_buffer('scale_z_h', torch.tensor(1.0, requires_grad=False))
-        self.register_buffer('scale_new_h_zn', torch.tensor(1.0, requires_grad=False))
-        self.register_buffer('scale_new_h_zh', torch.tensor(1.0, requires_grad=False))
+        # Pre-allocated index domains (moved with the module to the right device)
+        max_lin = 2 ** (self.output_observer_sigmoid_r.num_bits + 1)
+        self.register_buffer('sigmoid_domain', torch.arange(max_lin, dtype=torch.float32))
+        self.register_buffer('tanh_domain',    torch.arange(max_lin, dtype=torch.float32))
+        self.register_buffer('rescale_domain', torch.arange(2 ** self.output_observer_r_hn.num_bits, dtype=torch.float32))
 
-        self.register_buffer('quant_1', torch.tensor(1.0, requires_grad=False))
+        # Scales / zero-points used by quant path (filled in quantize())
+        self.register_buffer('scale_ih',        torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_hh',        torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_r_hn',      torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_z_n',       torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_z_h',       torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_new_h_zn',  torch.tensor(1.0, requires_grad=False))
+        self.register_buffer('scale_new_h_zh',  torch.tensor(1.0, requires_grad=False))
 
-        '''Modes for calibration and quantization'''
-        self.register_buffer('calib_mode', torch.tensor(False, requires_grad=False))
-        self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
+        self.register_buffer('quant_1',         torch.tensor(1.0, requires_grad=False))
+
+        # Modes
+        self.register_buffer('calib_mode',      torch.tensor(False, requires_grad=False))
+        self.register_buffer('quantize_mode',   torch.tensor(False, requires_grad=False))
+
 
     def reset_parameters(self) -> None:
-        """
-        Initialize the parameters of the GRU cell.
-        This is done using a uniform distribution.
-        """
         std = 1.0 / math.sqrt(self.hidden_size)
         for w in self.parameters():
             w.data.uniform_(-std, std)
 
-    def forward(self, 
+    def forward(self,
                 x: torch.Tensor,
                 h: torch.Tensor) -> torch.Tensor:
-        '''
-            Custom message function for PointNetConv.
-            We select the message function based on the current mode (calibration, quantize, or float)
-        '''
+        """
+        Dispatch by mode.
+        """
         if self.calib_mode.item() and not self.quantize_mode.item():
             return self.forward_calib(x, h)
         elif self.quantize_mode.item():
@@ -107,372 +99,236 @@ class MyGRUCell(nn.Module):
             return self.forward_float(x, h)
         else:
             raise ValueError('Invalid mode')
-        
+
     def calibrate(self):
         self.calib_mode.fill_(True)
 
     def quantize(self,
-               observer_input: Observer = None,
-               observer_output: Observer = None):
-        
+                 observer_input: Observer = None,
+                 observer_output: Observer = None):
+
         self.quantize_mode.fill_(True)
 
         if observer_input is not None:
             self.observer_input = observer_input
         if observer_output is not None:
-            self.observer_output = observer_output
+            self.observer_output = observer_output  # optional, not used directly here
 
-        # Quantize the input layer
-        q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) \
-                                    - self.weight_ih_observer.zero_point
-        
-        q_bias_ih = quantize_tensor(self.linear_ih.bias, 
-                                    scale=self.weight_ih_observer.scale * self.observer_input.scale,
-                                    zero_point=0,
-                                    num_bits=32,
-                                    signed=True)
-        
+        # Quantize the INPUT linear
+        q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) - self.weight_ih_observer.zero_point
+        q_bias_ih   = quantize_tensor(self.linear_ih.bias,
+                                      scale=self.weight_ih_observer.scale * self.observer_input.scale,
+                                      zero_point=0, num_bits=32, signed=True)
         self.linear_ih.weight = nn.Parameter(q_weight_ih)
-        self.linear_ih.bias = nn.Parameter(q_bias_ih)
+        self.linear_ih.bias   = nn.Parameter(q_bias_ih)
+        self.scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) / self.output_linear_observer.scale
 
-        self.scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) \
-                        / self.output_linear_observer.scale
-        
-        # Quantize the hidden layer
-        q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) \
-                                    - self.weight_hh_observer.zero_point
-        
-        q_bias_hh = quantize_tensor(self.linear_hh.bias, 
-                                    scale=self.weight_hh_observer.scale * self.observer_hidden.scale,
-                                    zero_point=0,
-                                    num_bits=32,
-                                    signed=True)
-        
+        # Quantize the HIDDEN linear
+        q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) - self.weight_hh_observer.zero_point
+        q_bias_hh   = quantize_tensor(self.linear_hh.bias,
+                                      scale=self.weight_hh_observer.scale * self.observer_hidden.scale,
+                                      zero_point=0, num_bits=32, signed=True)
         self.linear_hh.weight = nn.Parameter(q_weight_hh)
-        self.linear_hh.bias = nn.Parameter(q_bias_hh)
-        
-        scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) \
-                    / self.output_linear_observer.scale
-        
-        self.scale_hh = scale_hh
+        self.linear_hh.bias   = nn.Parameter(q_bias_hh)
+        self.scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) / self.output_linear_observer.scale
 
-        scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) \
-                    / self.output_observer_r_hn.scale
-        
-        self.scale_r_hn = scale_r_hn
+        # Precompute all scalar scales for elementwise ops
+        self.scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) / self.output_observer_r_hn.scale
 
+        self.quant_1 = quantize_tensor(torch.tensor(1.0, device=self.observer_hidden.scale.device),
+                                       scale=self.output_observer_sigmoid_z.scale,
+                                       zero_point=self.output_observer_sigmoid_z.zero_point,
+                                       num_bits=self.output_observer_sigmoid_z.num_bits)
 
-        quant_1 = quantize_tensor(1,
-                                scale=self.output_observer_sigmoid_z.scale,
-                                zero_point=self.output_observer_sigmoid_z.zero_point,
-                                num_bits=self.output_observer_sigmoid_z.num_bits)
-        
-        self.quant_1 = quant_1
+        self.scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) / self.output_observer_z_n.scale
+        self.scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) / self.output_observer_z_h.scale
 
-        scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) \
-                    / self.output_observer_z_n.scale
-        
-        self.scale_z_n = scale_z_n
-        
-        scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) \
-                    / self.output_observer_z_h.scale
-        
-        self.scale_z_h = scale_z_h
+        self.scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
+        self.scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
 
+        # -------- Build LUTs ONCE (moved out of calibration forward) --------
+        dev = self.linear_ih.weight.device
 
-        scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
-        scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
+        # Sigmoid LUTs for (i_* + h_*) in the domain [0 .. 2^(bits+1)-1]
+        in_sig = dequantize_tensor(
+            self.sigmoid_domain.to(dev),
+            self.output_linear_observer.scale,
+            self.output_linear_observer.zero_point * 2
+        )
+        sig = torch.sigmoid(in_sig)
+        self.lut_sigmoid_r.copy_(quantize_tensor(
+            sig, self.output_observer_sigmoid_r.scale, self.output_observer_sigmoid_r.zero_point,
+            num_bits=self.output_observer_sigmoid_r.num_bits
+        ))
+        self.lut_sigmoid_z.copy_(quantize_tensor(
+            sig, self.output_observer_sigmoid_z.scale, self.output_observer_sigmoid_z.zero_point,
+            num_bits=self.output_observer_sigmoid_z.num_bits
+        ))
 
-        self.scale_new_h_zn = scale_new_h_zn
-        self.scale_new_h_zh = scale_new_h_zh
+        # Tanh LUT for (r_hn + i_n_rescaled) in the domain [0 .. 2^(bits+1)-1]
+        in_tanh = dequantize_tensor(
+            self.tanh_domain.to(dev),
+            self.output_observer_r_hn.scale,
+            self.output_observer_r_hn.zero_point * 2
+        )
+        t = torch.tanh(in_tanh)
+        self.lut_tanh_n.copy_(quantize_tensor(
+            t, self.output_observer_tanh_n.scale, self.output_observer_tanh_n.zero_point,
+            num_bits=self.output_observer_tanh_n.num_bits
+        ))
 
+        # Rescale LUT to map i_n (quantized with output_linear_observer) into r_hn index space
+        lin_dom = torch.arange(2 ** self.output_linear_observer.num_bits, device=dev, dtype=torch.float32)
+        in_vec = (lin_dom - self.output_linear_observer.zero_point) * (self.output_linear_observer.scale / self.output_observer_r_hn.scale)
+        in_vec = torch.round(in_vec) + self.output_observer_r_hn.zero_point
+        in_vec = in_vec.clamp_(0, 2 ** self.output_observer_r_hn.num_bits - 1)
+        # Store into buffer (same num_bits used across observers in your setup)
+        self.lut_rescale_i_n.copy_(in_vec)
 
-    def forward_float(self, 
-                x: torch.Tensor, 
-                h: torch.Tensor) -> torch.Tensor:
+    def forward_float(self,
+                      x: torch.Tensor,
+                      h: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of the GRU cell.
-        Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, input_size).
-            h (torch.Tensor): Hidden state tensor of shape (batch_size, hidden_size).
-        Returns:
-            torch.Tensor: New hidden state tensor of shape (batch_size, hidden_size).
+        Standard float GRU cell.
         """
+        assert x.size(1) == self.input_size,  "Input size mismatch"
+        assert h.size(1) == self.hidden_size, "Hidden size mismatch"
+        assert x.size(0) == h.size(0),        "Batch size mismatch"
 
-        assert x.size(1) == self.input_size,    "Input size mismatch"
-        assert h.size(1) == self.hidden_size,   "Hidden size mismatch"
-        assert x.size(0) == h.size(0),          "Batch size mismatch"
-
-        # GRU cell computation
         gate_x = self.linear_ih(x)
         gate_h = self.linear_hh(h)
 
-        # Split the gates
         i_r, i_z, i_n = gate_x.chunk(3, 1)
         h_r, h_z, h_n = gate_h.chunk(3, 1)
 
-        # Reset gate
         r = torch.sigmoid(i_r + h_r)
-
-        # Update gate
         z = torch.sigmoid(i_z + h_z)
-
-        # New gate
         n = torch.tanh(i_n + r * h_n)
 
-        # Final output
         new_h = (1 - z) * n + z * h
         return new_h
-    
-    def forward_calib(self, 
-                  x: torch.Tensor, 
-                  h: torch.Tensor) -> None:
+
+    @torch.no_grad()
+    def forward_calib(self,
+                      x: torch.Tensor,
+                      h: torch.Tensor) -> torch.Tensor:
         """
-        Calibrate the GRU cell with input and hidden state.
-        Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, input_size).
-            h (torch.Tensor): Hidden state tensor of shape (batch_size, hidden_size).
+        FAST calibration pass:
+        - Pure-float compute.
+        - Update observers ONLY (no FakeQuantize, no LUT building).
+        - Observe static weights once per calibration session.
         """
-        
-        # Update observers with the input and hidden state
+        # Record inputs/hidden
         self.observer_input.update(x)
         self.observer_hidden.update(h)
 
-        x = FakeQuantize.apply(x, self.observer_input)
-        h = FakeQuantize.apply(h, self.observer_hidden)
-
-        # Update observers with the weights
+        # Record weights ONCE (they don't change across steps)
         self.weight_ih_observer.update(self.linear_ih.weight)
         self.weight_hh_observer.update(self.linear_hh.weight)
 
-        q_weight_ih = FakeQuantize.apply(self.linear_ih.weight, self.weight_ih_observer)
-        q_weight_hh = FakeQuantize.apply(self.linear_hh.weight, self.weight_hh_observer)
+        # Float linear projections
+        gate_x = self.linear_ih(x)
+        gate_h = self.linear_hh(h)
 
-        gate_x = F.linear(x, q_weight_ih, self.linear_ih.bias)
-        gate_h = F.linear(h, q_weight_hh, self.linear_hh.bias)
-
-        # Update observers with the output
+        # Update linear output observer
         self.output_linear_observer.update(gate_x)
         self.output_linear_observer.update(gate_h)
 
-        q_gate_x = FakeQuantize.apply(gate_x, self.output_linear_observer)
-        q_gate_h = FakeQuantize.apply(gate_h, self.output_linear_observer)
-
-        # Split the gates
-        i_r, i_z, i_n = q_gate_x.chunk(3, 1)
-        h_r, h_z, h_n = q_gate_h.chunk(3, 1)
-
-        # Reset gate
-        r = self.output_linear_observer.quantize_tensor(i_r) \
-            + self.output_linear_observer.quantize_tensor(h_r)
-        
-        in_vec = dequantize_tensor(self.sigmoid_domain,
-                                self.output_linear_observer.scale, 
-                                self.output_linear_observer.zero_point * 2)
-
-        sigmoid_r = torch.sigmoid(in_vec)
-        self.output_observer_sigmoid_r.update(torch.tensor([0.0, 1.0]))
-        self.lut_sigmoid_r = quantize_tensor(sigmoid_r,
-                                self.output_observer_sigmoid_r.scale, 
-                                self.output_observer_sigmoid_r.zero_point,
-                                num_bits=self.output_observer_sigmoid_r.num_bits)
-        sigmoid_r = FakeQuantize.apply(sigmoid_r, self.output_observer_sigmoid_r)
-
-        r = sigmoid_r[r.long()]
-
-        # Update gate
-        z = self.output_linear_observer.quantize_tensor(i_z) \
-            + self.output_linear_observer.quantize_tensor(h_z)
-        
-        in_vec = dequantize_tensor(self.sigmoid_domain,
-                                self.output_linear_observer.scale, 
-                                self.output_linear_observer.zero_point * 2)
-        sigmoid_z = torch.sigmoid(in_vec)
-        self.output_observer_sigmoid_z.update(torch.tensor([0.0, 1.0]))
-        self.lut_sigmoid_z = self.output_observer_sigmoid_z.quantize_tensor(sigmoid_z)
-        sigmoid_z = FakeQuantize.apply(sigmoid_z, self.output_observer_sigmoid_z)
-
-        z = sigmoid_z[z.long()]
-
-        # New gate multiplication
-        r_hn = r * h_n
-        self.output_observer_r_hn.update(r_hn)
-        self.output_observer_r_hn.update(i_n)
-        r_hn = FakeQuantize.apply(r_hn, self.output_observer_r_hn)
-
-        # New gate intermediate computation
-        in_vec = self.rescale_domain - self.output_linear_observer.zero_point
-        in_vec = (in_vec * (self.output_linear_observer.scale / self.output_observer_r_hn.scale)).round()
-        in_vec = in_vec + self.output_observer_r_hn.zero_point
-        self.lut_rescale_i_n = in_vec.clamp(0, 2**self.output_observer_r_hn.num_bits - 1)
-
-        i_n = self.output_linear_observer.quantize_tensor(i_n)
-        i_n = i_n - self.output_linear_observer.zero_point
-        i_n = (i_n * (self.output_linear_observer.scale / self.output_observer_r_hn.scale)).round()
-        i_n = i_n + self.output_observer_r_hn.zero_point
-        i_n = i_n.clamp(0, 2**self.output_observer_r_hn.num_bits - 1)
-        i_n = self.output_observer_r_hn.dequantize_tensor(i_n)
-        
-        # New gate
-        n = self.output_observer_r_hn.quantize_tensor(r_hn) \
-            + self.output_observer_r_hn.quantize_tensor(i_n)
-        
-        in_vec = dequantize_tensor(self.tanh_domain,
-                                self.output_observer_r_hn.scale, 
-                                self.output_observer_r_hn.zero_point  * 2)
-        tanh_n = torch.tanh(in_vec)
-        self.output_observer_tanh_n.update(tanh_n)
-        tanh_n = FakeQuantize.apply(tanh_n, self.output_observer_tanh_n)
-        self.lut_tanh_n = self.output_observer_tanh_n.quantize_tensor(tanh_n)
-
-        n = tanh_n[n.long()]
-
-        # New hidden state
-        diff = quantize_tensor(1,
-                                scale=self.output_observer_sigmoid_z.scale,
-                                zero_point=self.output_observer_sigmoid_z.zero_point,
-                                num_bits=self.output_observer_sigmoid_z.num_bits+1)
-        
-        diff = dequantize_tensor(diff,
-                                self.output_observer_sigmoid_z.scale, 
-                                self.output_observer_sigmoid_z.zero_point)
-        
-        z_diff = diff - z
-        z_diff = FakeQuantize.apply(z_diff, self.output_observer_sigmoid_z)
-
-        # Hammard product (1-z) * n
-        z_n = z_diff * n
-        self.output_observer_z_n.update(z_n)
-        z_n = FakeQuantize.apply(z_n, self.output_observer_z_n)
-
-        # Hammard product z * h
-        z_h = z * h
-        self.output_observer_z_h.update(z_h)
-        z_h = FakeQuantize.apply(z_h, self.output_observer_z_h)
-
-        new_h = z_n + z_h
-        self.observer_hidden.update(new_h)
-        new_h = FakeQuantize.apply(new_h, self.observer_hidden)
-
-        return new_h
-
-    def forward_quant(self, 
-                 x: torch.Tensor, 
-                 h: torch.Tensor) -> torch.Tensor:
-        """
-        Quantized forward pass of the GRU cell.
-        Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, input_size).
-            h (torch.Tensor): Hidden state tensor of shape (batch_size, hidden_size) (quantised).
-        Returns:
-            torch.Tensor: New hidden state tensor of shape (batch_size, hidden_size).
-        """
-        # Quantize the input
-        # x = self.observer_input.quantize_tensor(x)
-
-        # Quantize the weights and compute the input layer
-        # Weights quantization
-        # q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) \
-        #                             - self.weight_ih_observer.zero_point
-        
-        # q_bias_ih = quantize_tensor(self.linear_ih.bias, 
-        #                             scale=self.weight_ih_observer.scale * self.observer_input.scale,
-        #                             zero_point=0,
-        #                             num_bits=32,
-        #                             signed=True)
-
-        # scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) \
-        #                             / self.output_linear_observer.scale
-        
-        # Compute the input layer
-        # gate_x = F.linear(x - self.observer_input.zero_point, 
-        #                             q_weight_ih, 
-        #                             q_bias_ih)
-        gate_x = self.linear_ih(x - self.observer_input.zero_point)
-        gate_x = (gate_x * self.scale_ih).round()
-        gate_x = gate_x + self.output_linear_observer.zero_point
-        gate_x = gate_x.clamp(0, 2**self.output_linear_observer.num_bits - 1)
-
-        # Quantize the weights and compute the hidden layer
-        # Weights quantization
-        # q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) \
-        #                             - self.weight_hh_observer.zero_point
-        
-        # q_bias_hh = quantize_tensor(self.linear_hh.bias, 
-        #                             scale=self.weight_hh_observer.scale * self.observer_hidden.scale,
-        #                             zero_point=0,
-        #                             num_bits=32,
-        #                             signed=True)
-        
-        # scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) \
-        #             / self.output_linear_observer.scale
-        
-        # Compute the hidden layer
-        # gate_h = F.linear(h - self.observer_hidden.zero_point, 
-        #                             q_weight_hh, 
-        #                             q_bias_hh)
-
-        gate_h = self.linear_hh(h - self.observer_hidden.zero_point)
-        gate_h = (gate_h * self.scale_hh).round()
-        gate_h = gate_h + self.output_linear_observer.zero_point
-        gate_h = gate_h.clamp(0, 2**self.output_linear_observer.num_bits - 1)
-
-        # Split the gates
+        # Split gates
         i_r, i_z, i_n = gate_x.chunk(3, 1)
         h_r, h_z, h_n = gate_h.chunk(3, 1)
 
-        # Reset gate
-        r = (i_r + h_r).long()
-        r = self.lut_sigmoid_r[r]
+        # Gates (float)
+        r = torch.sigmoid(i_r + h_r)
+        z = torch.sigmoid(i_z + h_z)
 
-        # Update gate
-        z = (i_z + h_z).long()
+        # Ensure [0,1] coverage so later LUTs are safe even if data is narrow
+        ones = torch.tensor([0.0, 1.0], device=x.device)
+        self.output_observer_sigmoid_r.update(ones)
+        self.output_observer_sigmoid_z.update(ones)
+
+        # Also update with actual values
+        self.output_observer_sigmoid_r.update(r)
+        self.output_observer_sigmoid_z.update(z)
+
+        # New gate path
+        r_hn = r * h_n
+        self.output_observer_r_hn.update(r_hn)
+        # We also observe i_n so the sum domain (r_hn + i_n_rescaled) can be covered
+        self.output_observer_r_hn.update(i_n)
+
+        n = torch.tanh(i_n + r_hn)
+        self.output_observer_tanh_n.update(n)
+
+        # Output mixes for later scaling observers
+        z_diff = 1.0 - z
+        z_n = z_diff * n
+        z_h = z * h
+        self.output_observer_z_n.update(z_n)
+        self.output_observer_z_h.update(z_h)
+
+        new_h = z_n + z_h
+        self.observer_hidden.update(new_h)
+        return new_h
+
+    def forward_quant(self,
+                      x: torch.Tensor,
+                      h: torch.Tensor) -> torch.Tensor:
+        """
+        Quantized forward pass (uses LUTs/scales prepared in quantize()).
+        x, h are expected to be in the same (integer-emulated) domain used by observers.
+        """
+        # Input projection
+        gate_x = self.linear_ih(x - self.observer_input.zero_point)
+        gate_x = (gate_x * self.scale_ih).round()
+        gate_x = gate_x + self.output_linear_observer.zero_point
+        gate_x = gate_x.clamp(0, 2 ** self.output_linear_observer.num_bits - 1)
+
+        # Hidden projection
+        gate_h = self.linear_hh(h - self.observer_hidden.zero_point)
+        gate_h = (gate_h * self.scale_hh).round()
+        gate_h = gate_h + self.output_linear_observer.zero_point
+        gate_h = gate_h.clamp(0, 2 ** self.output_linear_observer.num_bits - 1)
+
+        # Split gates
+        i_r, i_z, i_n = gate_x.chunk(3, 1)
+        h_r, h_z, h_n = gate_h.chunk(3, 1)
+
+        # Sigmoid LUT lookups
+        r = (i_r + h_r).to(torch.int64)
+        r = self.lut_sigmoid_r[r]
+        z = (i_z + h_z).to(torch.int64)
         z = self.lut_sigmoid_z[z]
 
-        # New gate multiplication
-        # scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) \
-        #             / self.output_observer_r_hn.scale
-        r_hn = (r-self.output_observer_sigmoid_r.zero_point) * (h_n - self.output_linear_observer.zero_point)
+        # r * h_n in r_hn domain
+        r_hn = (r - self.output_observer_sigmoid_r.zero_point) * (h_n - self.output_linear_observer.zero_point)
         r_hn = (r_hn * self.scale_r_hn).round()
         r_hn = r_hn + self.output_observer_r_hn.zero_point
-        r_hn = r_hn.clamp(0, 2**self.output_observer_r_hn.num_bits - 1)
+        r_hn = r_hn.clamp(0, 2 ** self.output_observer_r_hn.num_bits - 1)
 
-        # New gate
-        i_n = self.lut_rescale_i_n[i_n.long()]
-        n = (r_hn + i_n).long()
-        n = self.lut_tanh_n[n]
+        # Rescale i_n into r_hn domain (via LUT)
+        i_n_rescaled = self.lut_rescale_i_n[i_n.to(torch.int64)]
 
-        # New hidden state
-        # Difference
-        # quant_1 = quantize_tensor(1,
-        #                         scale=self.output_observer_sigmoid_z.scale,
-        #                         zero_point=self.output_observer_sigmoid_z.zero_point,
-        #                         num_bits=self.output_observer_sigmoid_z.num_bits)
+        # Tanh LUT
+        n_idx = (r_hn + i_n_rescaled).to(torch.int64)
+        n = self.lut_tanh_n[n_idx]
+
+        # (1 - z) * n  and  z * h   in their respective domains
         z_diff = self.quant_1 - z
 
-        # Hammard product (1-z) * n
-        # scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) \
-        #             / self.output_observer_z_n.scale
-        
-        z_n = (z_diff-self.output_observer_sigmoid_z.zero_point) * (n - self.output_observer_tanh_n.zero_point)
+        z_n = (z_diff - self.output_observer_sigmoid_z.zero_point) * (n - self.output_observer_tanh_n.zero_point)
         z_n = (z_n * self.scale_z_n).round()
         z_n = z_n + self.output_observer_z_n.zero_point
-        z_n = z_n.clamp(0, 2**self.output_observer_z_n.num_bits - 1)
+        z_n = z_n.clamp(0, 2 ** self.output_observer_z_n.num_bits - 1)
 
-        # Hammard product z * h
-        # scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) \
-        #             / self.output_observer_z_h.scale
-        z_h = (z-self.output_observer_sigmoid_z.zero_point) * (h - self.observer_hidden.zero_point)
+        z_h = (z - self.output_observer_sigmoid_z.zero_point) * (h - self.observer_hidden.zero_point)
         z_h = (z_h * self.scale_z_h).round()
         z_h = z_h + self.output_observer_z_h.zero_point
-        z_h = z_h.clamp(0, 2**self.output_observer_z_h.num_bits - 1)
+        z_h = z_h.clamp(0, 2 ** self.output_observer_z_h.num_bits - 1)
 
-        # New hidden state
-        # scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
-        # scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
-        new_h = (z_n - self.output_observer_z_n.zero_point) * self.scale_new_h_zn \
-                + (z_h - self.output_observer_z_h.zero_point) * self.scale_new_h_zh
-        new_h = new_h.round()
-        new_h = new_h + self.observer_hidden.zero_point
-        new_h = new_h.clamp(0, 2**self.observer_hidden.num_bits - 1)
+        # Combine back to hidden domain
+        new_h = (z_n - self.output_observer_z_n.zero_point) * self.scale_new_h_zn + \
+                (z_h - self.output_observer_z_h.zero_point) * self.scale_new_h_zh
+        new_h = new_h.round() + self.observer_hidden.zero_point
+        new_h = new_h.clamp(0, 2 ** self.observer_hidden.num_bits - 1)
         return new_h

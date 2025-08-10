@@ -124,14 +124,6 @@ class MyPointNetConv(nn.Module):
         expanded_indices = indices.unsqueeze(1).expand(-1, self.output_dim)
         pooled_features = torch.zeros((unique_positions.size(0), self.output_dim), dtype=msg.dtype, device=x.device)
         pooled_features = pooled_features.scatter_reduce(0, expanded_indices, msg, reduce="amax", include_self=False)
-        
-        '''Apply global neural network if defined.'''
-        if self.global_nn is not None:
-            pooled_features = self.global_nn(pooled_features)
-
-        '''Apply batch normalization if defined.'''
-        # if self.norm is not None:
-        #     pooled_features = self.norm(pooled_features)
 
         return pooled_features
 
