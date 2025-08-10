@@ -3,25 +3,20 @@ import torch
 import torch.nn as nn
 from torch.autograd import Function
 
-
-def quantize_tensor(tensor: torch.Tensor,
-                    scale: float,
-                    zero_point: float,
-                    num_bits: int,
-                    signed: bool = False) -> torch.Tensor:
+def quantize_tensor(tensor, 
+                    scale, 
+                    zero_point, 
+                    num_bits=8,
+                    signed=False):
     """
     Quantize tensor: float -> int.
     """
     if signed:
-        qmin_i = -(1 << (num_bits - 1))
-        qmax_i =  (1 << (num_bits - 1)) - 1
+        qmin = -2**(num_bits - 1)
+        qmax = 2**(num_bits - 1) - 1
     else:
-        qmin_i = 0
-        qmax_i = (1 << num_bits) - 1
-
-    # Ujednolicenie typów dla TorchScript:
-    qmin = torch.tensor(qmin_i, dtype=tensor.dtype, device=tensor.device)
-    qmax = torch.tensor(qmax_i, dtype=tensor.dtype, device=tensor.device)
+        qmin = 0
+        qmax = 2**num_bits - 1
 
     q_tensor = torch.round(tensor / (scale + 1e-8) + zero_point)
     q_tensor = torch.clamp(q_tensor, qmin, qmax)
