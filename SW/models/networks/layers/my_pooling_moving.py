@@ -98,6 +98,7 @@ class MyMovingGlobalPooling(nn.Module):
         batch: Optional[torch.Tensor] = None,
         observer: Optional[nn.Module] = None
     ) -> Tensor:
+        
         if batch is None:
             # treat entire x as single graph
             batch = x.new_zeros(x.size(0), dtype=torch.long)
@@ -108,7 +109,7 @@ class MyMovingGlobalPooling(nn.Module):
         elif self.aggregator == 'mean':
             out = global_mean_pool(x, pos, batch)
         else:  # 'max'
-            out = self.global_max_pool(x, pos, batch)
+            out = self.global_max_pool(x, pos, batch, observer=observer)
 
         # quantization/observer logic
         # if self.calib_mode and not self.quantize_mode:
@@ -131,7 +132,8 @@ class MyMovingGlobalPooling(nn.Module):
         x: Tensor,        # [N, F]
         pos: Tensor,      # [N, 2]  – pos[:, 0] is time in seconds
         batch: Tensor,    # [N]     – values 0 … B-1
-        step: float = 0.01
+        step: float = 0.01,
+        observer: Optional[Observer] = None
     ) -> Tensor:
         """
         Divide each sample’s events into T = int(1/step) time bins and perform
@@ -178,7 +180,7 @@ class MyMovingGlobalPooling(nn.Module):
         if self.quantize_mode.item():
             pooled_flat = torch.where(
             pooled_flat == -float("inf"),
-            torch.zeros_like(pooled_flat),
+            torch.ones_like(pooled_flat) * observer.zero_point.item(),
             pooled_flat,
         )
         else:

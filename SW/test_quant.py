@@ -17,7 +17,7 @@ from time import time
 
 cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
 cfg = dotmap.DotMap(cfg)
-cfg.train.batch_size = 1  # Set batch size to 1 for testing
+cfg.train.batch_size =1  # Set batch size to 1 for testing
 
 dm = SpikingDigits(cfg)
 dm.setup()
@@ -34,25 +34,31 @@ for data in dm.test_dataloader():
 
 output = model(data)
 
-# x1 = output[2]  # Get the output of the first conv layer for observer input
+x1 = output[2]  # Get the output of the first conv layer for observer input
 
 model.model.calibrate()
 
 output = model(data)
 
-# x2 = output[2]  # Get the output of the first conv layer after calibration
+x2 = output[2]  # Get the output of the first conv layer after calibration
 
 model.model.quantize()
 
 output = model(data)
 
-# x3 = output[2]  # Get the output of the first conv layer after quantization
-# x3 = model.model.conv1.observer_output.dequantize_tensor(x3)
+x3 = output[2]  # Get the output of the first conv layer after quantization
 
-# print(x1)
-# print(x2)
-# print(x3)
+print(x1)
+print(x2)
+print(x3)
 
-# print((x1 - x2).abs().max())
-# print((x2 - x3).abs().max())
-# print(model.model.conv1.observer_output.scale, model.model.conv1.observer_output.zero_point)
+# print the original values of x1 x2 x3 where x2 and x3 differ
+idx = (x2 - x3).abs() > 0.0001
+print(idx.shape)
+print("Differences in x1 and x2:")
+print(x2[idx].cpu().detach().numpy())
+print(x3[idx].cpu().detach().numpy())
+
+print((x1 - x2).abs().max())
+print((x2 - x3).abs().max())
+print(model.model.conv4.observer_output.scale, model.model.conv4.observer_output.zero_point)
