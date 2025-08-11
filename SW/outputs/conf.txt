@@ -1,0 +1,94 @@
+Input scale (32 bit):
+ 33686004
+Input zero point:
+ 127
+Weight scale (32 bit):
+ 41659464
+Weight zero point:
+ 147
+Output scale (32 bit):
+ 468624256
+Output zero point:
+ 166
+M Scales (32 bit):
+ 2994597
+Weight (8 bit):
+weights_conv[0] = {30};
+weights_conv[1] = {-20};
+weights_conv[2] = {-34};
+weights_conv[3] = {-13};
+weights_conv[4] = {51};
+weights_conv[5] = {52};
+weights_conv[6] = {-5};
+weights_conv[7] = {-21};
+weights_conv[8] = {108};
+weights_conv[9] = {79};
+weights_conv[10] = {-56};
+weights_conv[11] = {10};
+weights_conv[12] = {44};
+weights_conv[13] = {-26};
+weights_conv[14] = {48};
+weights_conv[15] = {67};
+weights_conv[16] = {-84};
+weights_conv[17] = {-98};
+weights_conv[18] = {-46};
+weights_conv[19] = {-19};
+weights_conv[20] = {-66};
+weights_conv[21] = {-81};
+weights_conv[22] = {-11};
+weights_conv[23] = {18};
+weights_conv[24] = {86};
+weights_conv[25] = {59};
+weights_conv[26] = {66};
+weights_conv[27] = {10};
+weights_conv[28] = {-86};
+weights_conv[29] = {-94};
+weights_conv[30] = {52};
+weights_conv[31] = {-6};
+weights_conv[32] = {-22};
+weights_conv[33] = {6};
+weights_conv[34] = {-4};
+weights_conv[35] = {17};
+weights_conv[36] = {-14};
+weights_conv[37] = {20};
+weights_conv[38] = {-129};
+weights_conv[39] = {-43};
+weights_conv[40] = {-44};
+weights_conv[41] = {-28};
+weights_conv[42] = {-3};
+weights_conv[43] = {3};
+weights_conv[44] = {6};
+weights_conv[45] = {-147};
+weights_conv[46] = {-89};
+weights_conv[47] = {-16};
+weights_conv[48] = {17};
+weights_conv[49] = {0};
+weights_conv[50] = {1};
+weights_conv[51] = {48};
+weights_conv[52] = {-64};
+weights_conv[53] = {-91};
+weights_conv[54] = {14};
+weights_conv[55] = {64};
+weights_conv[56] = {12};
+weights_conv[57] = {16};
+weights_conv[58] = {11};
+weights_conv[59] = {-4};
+weights_conv[60] = {-4};
+weights_conv[61] = {-31};
+weights_conv[62] = {31};
+weights_conv[63] = {40};
+weights_conv[64] = {51};
+weights_conv[65] = {-44};
+weights_conv[66] = {-79};
+weights_conv[67] = {-1};
+weights_conv[68] = {54};
+weights_conv[69] = {9};
+weights_conv[70] = {-7};
+weights_conv[71] = {13};
+
+Bias (8 bit):
+ {208};
+Input range (8 bit):
+ [0]
+Output range (8 bit):
+ [0]

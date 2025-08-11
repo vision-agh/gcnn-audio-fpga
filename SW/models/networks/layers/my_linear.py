@@ -167,8 +167,8 @@ class MyLinear(nn.Module):
             f.write(f"M Scales ({int(self.num_bits_obs)} bit):\n {int(self.qscale_m)}\n")
 
             '''Save weights and bias to file.'''
-            weight = torch.flip(self.linear.weight, [0]).T
-            weight = weight.detach().cpu().numpy().astype(np.int32).tolist()
+            weight1 = torch.flip(self.linear.weight, [0]).T
+            weight = weight1.detach().cpu().numpy().astype(np.int32).tolist()
             
             f.write(f"Weight ({int(self.num_bits)} bit):\n")
             for idx, w in enumerate(weight):
@@ -186,6 +186,23 @@ class MyLinear(nn.Module):
 
             f.write(f"Input range ({int(self.num_bits)} bit):\n {input_range}\n")
             f.write(f"Output range ({int(self.num_bits)} bit):\n {output_range}\n")
+
+            weight = weight1.T
+            weight = weight.detach().cpu().numpy().astype(np.int32).tolist()
+
+            with open(file_name.replace('.txt', '.mem'), 'w') as f:
+                for idx, we in enumerate(weight):
+                    bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
+                    Z1a2 = sum([w + self.observer_weight.zero_point.to(torch.int32).item() for w in we]) * \
+                        self.observer_weight.zero_point.to(torch.int32).item()
+                    NZ1Z2 = self.output_dim * \
+                                self.observer_input.zero_point.to(torch.int32).item() * \
+                                    self.observer_weight.zero_point.to(torch.int32).item()
+                    # Concat to bin_vec binary repr of bias
+                    bin_vec = bin_vec + [np.binary_repr(bias[len(bias)-idx-1] - Z1a2 + NZ1Z2, width=32)]
+                    dlugi_ciag_bitow = ''.join(bin_vec)
+                    wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
+                    f.write(f"{str(wartosc_hex)[2:]}\n")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(input_dim={self.input_dim}, output_dim={self.output_dim}, bias={self.bias}, num_bits={self.num_bits})"

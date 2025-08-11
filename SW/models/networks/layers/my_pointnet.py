@@ -324,11 +324,18 @@ class MyPointNetConv(nn.Module):
         with open(file_name.replace('.txt', '.mem'), 'w') as f:
             for idx, we in enumerate(weight):
                 bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
+                Z1a2 = sum([w + self.observer_weight.zero_point.to(torch.int32).item() for w in we]) * \
+                      self.observer_weight.zero_point.to(torch.int32).item()
+                NZ1Z2 = self.output_dim * \
+                            self.observer_input.zero_point.to(torch.int32).item() * \
+                                  self.observer_weight.zero_point.to(torch.int32).item()
                 # Concat to bin_vec binary repr of bias
-                bin_vec = bin_vec + [np.binary_repr(bias[len(bias)-idx-1], width=32)]
+                bin_vec = bin_vec + [np.binary_repr(bias[len(bias)-idx-1] - Z1a2 + NZ1Z2, width=32)]
                 dlugi_ciag_bitow = ''.join(bin_vec)
-                wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
-                f.write(f"{str(wartosc_hex)[2:]}\n")
+                # split to 72 bits chunks and write to file
+                for i in range(0, len(dlugi_ciag_bitow), 72):
+                    wartosc_hex = hex(int(dlugi_ciag_bitow[i:i+72], 2))
+                    f.write(f"{str(wartosc_hex)[2:]}\n")
 
 
     def __repr__(self) -> str:
