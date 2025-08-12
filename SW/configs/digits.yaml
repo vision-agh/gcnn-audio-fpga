@@ -1,3 +1,5 @@
+debug: False
+
 general:
   name: Spiking_Heidelberg_Digits
   data_dir: /home/imperator/Datasets/hdspikes

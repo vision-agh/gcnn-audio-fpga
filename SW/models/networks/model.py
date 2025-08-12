@@ -9,6 +9,7 @@ from models.networks.layers.my_pointnet import MyPointNetConv
 from models.networks.layers.my_pooling_moving import MyMovingGlobalPooling
 from models.networks.layers.my_gru import MyGRU
 
+from utils.generate_outputs import conv_gen_out, conv_first_gen_out, graph_gen_out, vector_out
 
 class GCN(Module):
     def __init__(self, 
@@ -60,12 +61,21 @@ class GCN(Module):
     def forward(self, data):
         x, pos, edge_index, batch = data['x'], data['pos'], data['edge_index'], data['batch']
 
+        graph_gen_out(x, pos, edge_index, self.config, 'outputs/graph_out.txt')
+
         x = self.conv1(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv1_out.txt')
         x = self.conv2(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv2_out.txt')
         x = self.conv3(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv3_out.txt')
         x = self.conv4(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv4_out.txt')
 
         x = self.pooling(x, pos, batch, self.conv4.observer_output)
+        vector_out(x, self.config, 'outputs/pooling_out.txt')
+
+
 
         x = self.fc1(x)
 
@@ -75,6 +85,7 @@ class GCN(Module):
             # In quantize mode, simulate quantized ReLU
             x[x < self.fc1.observer_output.zero_point] = self.fc1.observer_output.zero_point
 
+        vector_out(x, self.config, 'outputs/fc1.txt')
         x = self.fc2(x)
 
         if not self.quantize_mode:
@@ -83,12 +94,16 @@ class GCN(Module):
             # In quantize mode, simulate quantized ReLU
             x[x < self.fc2.observer_output.zero_point] = self.fc2.observer_output.zero_point
 
+        vector_out(x, self.config, 'outputs/fc2.txt')
         x = self.rnn(x)[0]
+        vector_out(x, self.config, 'outputs/rnn.txt')
 
         conf = self.conf(x)
+        vector_out(conf, self.config, 'outputs/conf.txt')
         conf = conf.squeeze(2)
 
         cls = self.cls(x)
+        vector_out(cls, self.config, 'outputs/cls.txt')
         cls = cls.permute(0, 2, 1)
 
         if self.quantize_mode.item():
