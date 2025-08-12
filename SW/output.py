@@ -21,20 +21,23 @@ dm = SpikingDigits(cfg)
 dm.setup()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = torch.load('checkpoints/best_model_quantized.ckpt', map_location='cpu', weights_only=False)
+# model = torch.load('checkpoints/best_model_calibrated.ckpt', map_location='cpu', weights_only=False)
+model = LNRecognition.load_from_checkpoint('checkpoints/best_model_calibrated.ckpt', config=cfg, strict=False)
 model.eval().to(device)
 
-
-model.conv1.get_parameters('outputs/conv1.txt')
-model.conv2.get_parameters('outputs/conv2.txt')
-model.conv3.get_parameters('outputs/conv3.txt')
-model.conv4.get_parameters('outputs/conv4.txt')
-model.fc1.get_parameters('outputs/fc1.txt')
-model.fc2.get_parameters('outputs/fc2.txt')
+model.model.quantize()
 
 
-model.cls.get_parameters('outputs/cls.txt')
-model.conf.get_parameters('outputs/conf.txt')
+model.model.conv1.get_parameters('outputs/conv1.txt')
+model.model.conv2.get_parameters('outputs/conv2.txt')
+model.model.conv3.get_parameters('outputs/conv3.txt')
+model.model.conv4.get_parameters('outputs/conv4.txt')
+model.model.fc1.get_parameters('outputs/fc1.txt')
+model.model.fc2.get_parameters('outputs/fc2.txt')
+
+model.model.rnn.gru.get_parameters('outputs/rnn.txt')
+model.model.cls.get_parameters('outputs/cls.txt')
+model.model.conf.get_parameters('outputs/conf.txt')
 # for data in dm.val_dataloader():
 #     for key in data:
 #         if isinstance(data[key], torch.Tensor):

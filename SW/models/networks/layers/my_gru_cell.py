@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,6 +31,7 @@ class MyGRUCell(nn.Module):
         self.reset_parameters()
 
         # Observers for quantization
+        self.num_bits = num_bits
         self.num_bits_obs = 32
 
         self.observer_input = Observer(num_bits=num_bits)
@@ -79,6 +81,27 @@ class MyGRUCell(nn.Module):
         self.register_buffer('calib_mode',      torch.tensor(False, requires_grad=False))
         self.register_buffer('quantize_mode',   torch.tensor(False, requires_grad=False))
 
+        # Scales for quantization
+        self.register_buffer('qscale_in',       torch.tensor(1.0, requires_grad=False)) # observer_input
+        self.register_buffer('qscale_h',        torch.tensor(1.0, requires_grad=False)) # observer_hidden
+        self.register_buffer('qscale_w_ih',        torch.tensor(1.0, requires_grad=False)) # weight_ih_observer
+        self.register_buffer('qscale_w_hh',        torch.tensor(1.0, requires_grad=False)) # weight_hh_observer
+        self.register_buffer('qscale_out_linear',      torch.tensor(1.0, requires_grad=False)) # output_linear_observer
+        self.register_buffer('qscale_out_sigmoid_r',  torch.tensor(1.0, requires_grad=False)) # output_observer_sigmoid_r
+        self.register_buffer('qscale_out_sigmoid_z',  torch.tensor(1.0, requires_grad=False)) # output_observer_sigmoid_z
+        self.register_buffer('qscale_out_tanh_n',       torch.tensor(1.0, requires_grad=False)) # output_observer_tanh_n
+        self.register_buffer('qscale_out_r_hn',        torch.tensor(1.0, requires_grad=False)) # output_observer_r_hn
+        self.register_buffer('qscale_out_z_n',         torch.tensor(1.0, requires_grad=False)) # output_observer_z_n
+        self.register_buffer('qscale_out_z_h',         torch.tensor(1.0, requires_grad=False)) # output_observer_z_h    
+
+        self.register_buffer('qscale_ih',        torch.tensor(1.0, requires_grad=False)) # scale_ih
+        self.register_buffer('qscale_hh',        torch.tensor(1.0, requires_grad=False)) # scale_hh
+        self.register_buffer('qscale_r_hn',      torch.tensor(1.0, requires_grad=False)) # scale_r_hn
+        self.register_buffer('qscale_z_n',       torch.tensor(1.0, requires_grad=False)) # scale_z_n
+        self.register_buffer('qscale_z_h',       torch.tensor(1.0, requires_grad=False)) # scale_z_h
+        self.register_buffer('qscale_new_h_zn',  torch.tensor(1.0, requires_grad=False)) # scale_new_h_zn
+        self.register_buffer('qscale_new_h_zh',  torch.tensor(1.0, requires_grad=False)) # scale_new_h_zh
+
 
     def reset_parameters(self) -> None:
         std = 1.0 / math.sqrt(self.hidden_size)
@@ -114,6 +137,37 @@ class MyGRUCell(nn.Module):
         if observer_output is not None:
             self.observer_output = observer_output  # optional, not used directly here
 
+        # Calculate scales for FPGA
+        self.qscale_in.copy_( (2**self.num_bits_obs * self.observer_input.scale).round() )
+        self.observer_input.scale = self.qscale_in / (2 ** self.num_bits_obs)
+
+        self.qscale_h.copy_( (2**self.num_bits_obs * self.observer_hidden.scale).round() )
+        self.observer_hidden.scale = self.qscale_h / (2 ** self.num_bits_obs)
+
+        self.qscale_w_ih.copy_( (2**self.num_bits_obs * self.weight_ih_observer.scale).round() )
+        self.weight_ih_observer.scale = self.qscale_w_ih / (2 ** self.num_bits_obs)
+
+        self.qscale_w_hh.copy_( (2**self.num_bits_obs * self.weight_hh_observer.scale).round() )
+        self.weight_hh_observer.scale = self.qscale_w_hh / (2 ** self.num_bits_obs)
+
+        self.qscale_out_linear.copy_( (2**self.num_bits_obs * self.output_linear_observer.scale).round() )
+        self.output_linear_observer.scale = self.qscale_out_linear / (2 ** self.num_bits_obs)
+
+        self.qscale_out_sigmoid_r.copy_( (2**self.num_bits_obs * self.output_observer_sigmoid_r.scale).round() )
+        self.output_observer_sigmoid_r.scale = self.qscale_out_sigmoid_r / ( 2 ** self.num_bits_obs)
+
+        self.qscale_out_sigmoid_z.copy_( (2**self.num_bits_obs * self.output_observer_sigmoid_z.scale).round() )
+        self.output_observer_sigmoid_z.scale = self.qscale_out_sigmoid_z / ( 2 ** self.num_bits_obs)
+
+        self.qscale_out_tanh_n.copy_( (2**self.num_bits_obs * self.output_observer_tanh_n.scale).round() )
+        self.output_observer_tanh_n.scale = self.qscale_out_tanh_n / ( 2 ** self.num_bits_obs)
+
+        self.qscale_out_r_hn.copy_( (2**self.num_bits_obs * self.output_observer_r_hn.scale).round() )
+        self.output_observer_r_hn.scale = self.qscale_out_r_hn / ( 2 ** self.num_bits_obs)
+
+        self.qscale_out_z_n.copy_( (2**self.num_bits_obs * self.output_observer_z_n.scale).round() )
+        self.output_observer_z_n.scale = self.qscale_out_z_n / ( 2 ** self.num_bits_obs)
+
         # Quantize the INPUT linear
         q_weight_ih = self.weight_ih_observer.quantize_tensor(self.linear_ih.weight) - self.weight_ih_observer.zero_point
         q_bias_ih   = quantize_tensor(self.linear_ih.bias,
@@ -122,6 +176,9 @@ class MyGRUCell(nn.Module):
         self.linear_ih.weight = nn.Parameter(q_weight_ih)
         self.linear_ih.bias   = nn.Parameter(q_bias_ih)
         self.scale_ih = (self.weight_ih_observer.scale * self.observer_input.scale) / self.output_linear_observer.scale
+
+        self.qscale_ih.copy_( (2**self.num_bits_obs * self.scale_ih).round() )
+        self.scale_ih = self.qscale_ih / (2 ** self.num_bits_obs)
 
         # Quantize the HIDDEN linear
         q_weight_hh = self.weight_hh_observer.quantize_tensor(self.linear_hh.weight) - self.weight_hh_observer.zero_point
@@ -132,8 +189,14 @@ class MyGRUCell(nn.Module):
         self.linear_hh.bias   = nn.Parameter(q_bias_hh)
         self.scale_hh = (self.weight_hh_observer.scale * self.observer_hidden.scale) / self.output_linear_observer.scale
 
+        self.qscale_hh.copy_( (2**self.num_bits_obs * self.scale_hh).round() )
+        self.scale_hh = self.qscale_hh / (2 ** self.num_bits_obs)
+
         # Precompute all scalar scales for elementwise ops
         self.scale_r_hn = (self.output_observer_sigmoid_r.scale * self.output_linear_observer.scale) / self.output_observer_r_hn.scale
+
+        self.qscale_r_hn.copy_( (2**self.num_bits_obs * self.scale_r_hn).round() )
+        self.scale_r_hn = self.qscale_r_hn / (2 ** self.num_bits_obs)
 
         self.quant_1 = quantize_tensor(torch.tensor(1.0, device=self.observer_hidden.scale.device),
                                        scale=self.output_observer_sigmoid_z.scale,
@@ -143,8 +206,18 @@ class MyGRUCell(nn.Module):
         self.scale_z_n = (self.output_observer_sigmoid_z.scale * self.output_observer_tanh_n.scale) / self.output_observer_z_n.scale
         self.scale_z_h = (self.output_observer_sigmoid_z.scale * self.observer_hidden.scale) / self.output_observer_z_h.scale
 
+        self.qscale_z_n.copy_( (2**self.num_bits_obs * self.scale_z_n).round() )
+        self.scale_z_n = self.qscale_z_n / (2 ** self.num_bits_obs)
+        self.qscale_z_h.copy_( (2**self.num_bits_obs * self.scale_z_h).round() )
+        self.scale_z_h = self.qscale_z_h / (2 ** self.num_bits_obs)
+
         self.scale_new_h_zn = self.output_observer_z_n.scale / self.observer_hidden.scale
         self.scale_new_h_zh = self.output_observer_z_h.scale / self.observer_hidden.scale
+
+        self.qscale_new_h_zn.copy_( (2**self.num_bits_obs * self.scale_new_h_zn).round() )
+        self.scale_new_h_zn = self.qscale_new_h_zn / (2 ** self.num_bits_obs)
+        self.qscale_new_h_zh.copy_( (2**self.num_bits_obs * self.scale_new_h_zh).round() )
+        self.scale_new_h_zh = self.qscale_new_h_zh / (2 ** self.num_bits_obs)
 
         # -------- Build LUTs ONCE (moved out of calibration forward) --------
         dev = self.linear_ih.weight.device
@@ -184,6 +257,7 @@ class MyGRUCell(nn.Module):
         in_vec = in_vec.clamp_(0, 2 ** self.output_observer_r_hn.num_bits - 1)
         # Store into buffer (same num_bits used across observers in your setup)
         self.lut_rescale_i_n.copy_(in_vec)
+
 
     def forward_float(self,
                       x: torch.Tensor,
@@ -332,3 +406,150 @@ class MyGRUCell(nn.Module):
         new_h = new_h.round() + self.observer_hidden.zero_point
         new_h = new_h.clamp(0, 2 ** self.observer_hidden.num_bits - 1)
         return new_h
+    
+
+    def get_parameters(self,
+                       file_name: str = None):
+        
+        with open('outputs/gru.txt', 'w') as f:
+            '''Save scales and zero points to file.'''
+            f.write(f"Input scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_in)}\n")
+            f.write(f"Input zero point:\n {int(self.observer_input.zero_point)}\n")
+
+            f.write(f"Hidden scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_h)}\n")
+            f.write(f"Hidden zero point:\n {int(self.observer_hidden.zero_point)}\n")
+
+            f.write(f"Weight input scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_w_ih)}\n")
+            f.write(f"Weight input zero point:\n {int(self.weight_ih_observer.zero_point)}\n")
+
+            f.write(f"Weight hidden scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_w_hh)}\n")
+            f.write(f"Weight hidden zero point:\n {int(self.weight_hh_observer.zero_point)}\n")
+
+            f.write(f"Output linear scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_linear)}\n")
+            f.write(f"Output linear zero point:\n {int(self.output_linear_observer.zero_point)}\n")
+
+            f.write(f"Output sigmoid r scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_sigmoid_r)}\n")
+            f.write(f"Output sigmoid r zero point:\n {int(self.output_observer_sigmoid_r.zero_point)}\n")
+
+            f.write(f"Output sigmoid z scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_sigmoid_z)}\n")
+            f.write(f"Output sigmoid z zero point:\n {int(self.output_observer_sigmoid_z.zero_point)}\n")
+
+            f.write(f"Output tanh n scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_tanh_n)}\n")
+            f.write(f"Output tanh n zero point:\n {int(self.output_observer_tanh_n.zero_point)}\n")
+
+            f.write(f"Output r_hn scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_r_hn)}\n")
+            f.write(f"Output r_hn zero point:\n {int(self.output_observer_r_hn.zero_point)}\n")
+
+            f.write(f"Output z_n scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_z_n)}\n")     
+            f.write(f"Output z_n zero point:\n {int(self.output_observer_z_n.zero_point)}\n")
+
+            f.write(f"Output z_h scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_out_z_h)}\n")
+            f.write(f"Output z_h zero point:\n {int(self.output_observer_z_h.zero_point)}\n")
+
+            f.write(f"Scale ih ({int(self.num_bits_obs)} bit):\n {int(self.qscale_ih)}\n")
+            f.write(f"Scale hh ({int(self.num_bits_obs)} bit):\n {int(self.qscale_hh)}\n")
+            f.write(f"Scale r_hn ({int(self.num_bits_obs)} bit):\n {int(self.qscale_r_hn)}\n")
+            f.write(f"Scale z_n ({int(self.num_bits_obs)} bit):\n {int(self.qscale_z_n)}\n")
+            f.write(f"Scale z_h ({int(self.num_bits_obs)} bit):\n {int(self.qscale_z_h)}\n")
+            f.write(f"Scale new_h_zn ({int(self.num_bits_obs)} bit):\n {int(self.qscale_new_h_zn)}\n")
+            f.write(f"Scale new_h_zh ({int(self.num_bits_obs)} bit):\n {int(self.qscale_new_h_zh)}\n")
+
+            '''Save weights and bias to file.'''
+            weight_ih = torch.flip(self.linear_ih.weight, [0]).T
+            weight_ih = weight_ih.detach().cpu().numpy().astype(np.int32).tolist()
+            
+            f.write(f"Weight_ih ({int(self.num_bits)} bit):\n")
+            for idx, w in enumerate(weight_ih):
+                f.write(f"weights_linear_ih[{idx}] = {str(w).replace('[', '{').replace(']', '}') + ';'}\n")
+
+            bias_ih = torch.flip(self.linear_ih.bias, [0])
+            bias_ih = bias_ih.detach().cpu().numpy().astype(np.int32).tolist()
+            f.write(f"\nBias_ih ({int(self.num_bits)} bit):\n {str(bias_ih).replace('[', '{').replace(']', '}') + ';'}\n")
+
+            '''Save weights and bias to file.'''
+            weight_hh = torch.flip(self.linear_hh.weight, [0]).T
+            weight_hh = weight_hh.detach().cpu().numpy().astype(np.int32).tolist()
+            
+            f.write(f"Weight_hh ({int(self.num_bits)} bit):\n")
+            for idx, w in enumerate(weight_hh):
+                f.write(f"weights_linear_hh[{idx}] = {str(w).replace('[', '{').replace(']', '}') + ';'}\n")
+
+            bias_hh = torch.flip(self.linear_hh.bias, [0])
+            bias_hh = bias_hh.detach().cpu().numpy().astype(np.int32).tolist()
+            f.write(f"\nBias_hh ({int(self.num_bits)} bit):\n {str(bias_hh).replace('[', '{').replace(']', '}') + ';'}\n")
+
+            weight_ih = torch.flip(self.linear_ih.weight, [0])
+            weight_ih = weight_ih.detach().cpu().numpy().astype(np.int32).tolist()
+
+            weight_hh = torch.flip(self.linear_hh.weight, [0])
+            weight_hh = weight_hh.detach().cpu().numpy().astype(np.int32).tolist()
+
+            with open('outputs/linear_ih.mem', 'w') as f:
+                for idx, we in enumerate(weight_ih):
+                    bin_vec = [np.binary_repr(w+self.weight_ih_observer.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
+                    Z1a2 = sum([w + self.weight_ih_observer.zero_point.to(torch.int32).item() for w in we]) * \
+                        self.weight_ih_observer.zero_point.to(torch.int32).item()
+                    NZ1Z2 = self.hidden_size * \
+                                self.observer_input.zero_point.to(torch.int32).item() * \
+                                    self.weight_ih_observer.zero_point.to(torch.int32).item()
+                    # Concat to bin_vec binary repr of bias
+                    bin_vec = bin_vec + [np.binary_repr(bias_ih[len(bias_ih)-idx-1] - Z1a2 + NZ1Z2, width=32)]
+                    dlugi_ciag_bitow = ''.join(bin_vec)
+                    wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
+                    f.write(f"{str(wartosc_hex)[2:]}\n")
+
+            with open('outputs/linear_hh.mem', 'w') as f:
+                for idx, we in enumerate(weight_hh):
+                    bin_vec = [np.binary_repr(w+self.weight_hh_observer.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
+                    Z1a2 = sum([w + self.weight_hh_observer.zero_point.to(torch.int32).item() for w in we]) * \
+                        self.weight_hh_observer.zero_point.to(torch.int32).item()
+                    NZ1Z2 = self.hidden_size * \
+                                self.observer_hidden.zero_point.to(torch.int32).item() * \
+                                    self.weight_hh_observer.zero_point.to(torch.int32).item()
+                    # Concat to bin_vec binary repr of bias
+                    bin_vec = bin_vec + [np.binary_repr(bias_ih[len(bias_ih)-idx-1] - Z1a2 + NZ1Z2, width=32)]
+                    dlugi_ciag_bitow = ''.join(bin_vec)
+                    wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
+                    f.write(f"{str(wartosc_hex)[2:]}\n")
+
+            with open('outputs/lut_sigmoid_r.mem', 'w') as f:
+                f.write(f"memory_initialization_radix={10};\n")
+                f.write(f"memory_initialization_vector=")
+                for idx, val in enumerate(self.lut_sigmoid_r):
+                    f.write(f"{int(val.item())}")
+                    if idx < len(self.lut_sigmoid_r) - 1:
+                        f.write(" ")
+                    else:
+                        f.write(";\n")
+
+            with open('outputs/lut_sigmoid_z.mem', 'w') as f:
+                f.write(f"memory_initialization_radix={10};\n")
+                f.write(f"memory_initialization_vector=")
+                for idx, val in enumerate(self.lut_sigmoid_z):
+                    f.write(f"{int(val.item())}")
+                    if idx < len(self.lut_sigmoid_z) - 1:
+                        f.write(" ")
+                    else:
+                        f.write(";\n")
+
+            with open('outputs/lut_tanh_n.mem', 'w') as f:
+                f.write(f"memory_initialization_radix={10};\n")
+                f.write(f"memory_initialization_vector=")
+                for idx, val in enumerate(self.lut_tanh_n):
+                    f.write(f"{int(val.item())}")
+                    if idx < len(self.lut_tanh_n) - 1:
+                        f.write(" ")
+                    else:
+                        f.write(";\n")
+            
+            with open('outputs/lut_rescale_i_n.mem', 'w') as f:
+                f.write(f"memory_initialization_radix={10};\n")
+                f.write(f"memory_initialization_vector=")
+                for idx, val in enumerate(self.lut_rescale_i_n):
+                    f.write(f"{int(val.item())}")
+                    if idx < len(self.lut_rescale_i_n) - 1:
+                        f.write(" ")
+                    else:
+                        f.write(";\n")
+
+
