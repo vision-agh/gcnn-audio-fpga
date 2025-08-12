@@ -2,7 +2,6 @@
 /datasets/hdspikes/*
 /wandb/
 /audio_event/
-/checkpoints/
 /lightning_logs/
 model.pth
 

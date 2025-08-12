@@ -6,6 +6,7 @@ import argparse
 import multiprocessing as mp
 
 from data.spiking_digits import SpikingDigits 
+from data.spiking_commands import SpikingCommands 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -56,12 +57,12 @@ def detect_active_range(hist, bin_edges, T_high=None, T_low=None, cooldown_steps
 
 
 def main():
-    cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
+    cfg = yaml.load(open('configs/commands.yaml', 'r'), Loader=yaml.FullLoader)
     cfg = dotmap.DotMap(cfg)
     cfg.train.batch_size = 1  # Set batch size to 64
     cfg.train.num_workers = 1  # Set num_workers to 0 for debugging
 
-    dm = SpikingDigits(cfg)
+    dm = SpikingCommands(cfg)
     dm.setup()
 
     for data in dm.val_dataloader():
