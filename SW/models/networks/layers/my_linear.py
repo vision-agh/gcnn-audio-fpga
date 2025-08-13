@@ -167,8 +167,8 @@ class MyLinear(nn.Module):
             f.write(f"M Scales ({int(self.num_bits_obs)} bit):\n {int(self.qscale_m)}\n")
 
             '''Save weights and bias to file.'''
-            weight1 = torch.flip(self.linear.weight, [0]).T
-            weight = weight1.detach().cpu().numpy().astype(np.int32).tolist()
+            weight = torch.flip(self.linear.weight, [1])
+            weight = weight.detach().cpu().numpy().astype(np.int32).tolist()
             
             f.write(f"Weight ({int(self.num_bits)} bit):\n")
             for idx, w in enumerate(weight):
@@ -179,22 +179,11 @@ class MyLinear(nn.Module):
                 bias = bias.detach().cpu().numpy().astype(np.int32).tolist()
                 f.write(f"\nBias ({int(self.num_bits)} bit):\n {str(bias).replace('[', '{').replace(']', '}') + ';'}\n")
 
-            '''Save LUT for POS quantization to file.'''
-            input_range = list(range(int(self.observer_input.min), int(self.observer_input.max + 1)))
-            output_range = self.observer_input.quantize_tensor(torch.tensor(input_range).to(self.linear.weight.device)) - self.observer_input.zero_point
-            output_range = output_range.detach().cpu().numpy().astype(np.int32).tolist()
-
-            f.write(f"Input range ({int(self.num_bits)} bit):\n {input_range}\n")
-            f.write(f"Output range ({int(self.num_bits)} bit):\n {output_range}\n")
-
-            weight = weight1.T
-            weight = weight.detach().cpu().numpy().astype(np.int32).tolist()
-
             with open(file_name.replace('.txt', '.mem'), 'w') as f:
                 for idx, we in enumerate(weight):
                     bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
                     Z1a2 = sum([w + self.observer_weight.zero_point.to(torch.int32).item() for w in we]) * \
-                        self.observer_weight.zero_point.to(torch.int32).item()
+                        self.observer_input.zero_point.to(torch.int32).item()
                     NZ1Z2 = self.output_dim * \
                                 self.observer_input.zero_point.to(torch.int32).item() * \
                                     self.observer_weight.zero_point.to(torch.int32).item()

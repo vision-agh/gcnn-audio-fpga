@@ -488,7 +488,7 @@ class MyGRUCell(nn.Module):
                 for idx, we in enumerate(weight_ih):
                     bin_vec = [np.binary_repr(w+self.weight_ih_observer.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
                     Z1a2 = sum([w + self.weight_ih_observer.zero_point.to(torch.int32).item() for w in we]) * \
-                        self.weight_ih_observer.zero_point.to(torch.int32).item()
+                        self.observer_input.zero_point.to(torch.int32).item()
                     NZ1Z2 = self.hidden_size * \
                                 self.observer_input.zero_point.to(torch.int32).item() * \
                                     self.weight_ih_observer.zero_point.to(torch.int32).item()
@@ -502,7 +502,7 @@ class MyGRUCell(nn.Module):
                 for idx, we in enumerate(weight_hh):
                     bin_vec = [np.binary_repr(w+self.weight_hh_observer.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
                     Z1a2 = sum([w + self.weight_hh_observer.zero_point.to(torch.int32).item() for w in we]) * \
-                        self.weight_hh_observer.zero_point.to(torch.int32).item()
+                        self.observer_hidden.zero_point.to(torch.int32).item()
                     NZ1Z2 = self.hidden_size * \
                                 self.observer_hidden.zero_point.to(torch.int32).item() * \
                                     self.weight_hh_observer.zero_point.to(torch.int32).item()
