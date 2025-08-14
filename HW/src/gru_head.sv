@@ -18,21 +18,22 @@ module gru_head #(
     output logic [PRECISION-1 :0]  out_cls [CLS_NUM-1:0]
 );
 
-    logic [31:0]     multiplier [2:0] = {11527193, 18953250, 14189199};
-    logic [PRECISION-1:0]  zp_w [2:0] = {119, 110, 157};
-    logic [PRECISION-1:0]  zp_o [2:0] = {117, 136, 147};
+    logic [31:0]     multiplier [3:0] = {11527193, 18953250, 14189199, 1817144};
+    logic [PRECISION-1:0]  zp_w [3:0] = {119, 110, 157, 131};
+    logic [PRECISION-1:0]  zp_o [3:0] = {117, 136, 147, 117};
 
     localparam ITERATIONS = HEAD_DIM/2;
-    localparam IDLE = 3'd0;
-    localparam LINEAR_1 = 3'd1;
-    localparam LINEAR_2 = 3'd2;
-    localparam GRU_X = 3'd3;
-    localparam PREPARE_HEAD = 3'd4;
-    localparam CLS_HEAD = 3'd5;
-    localparam GRU_H = 3'd6;
+    localparam TAKEOFF = 3'd7;
+    localparam GRU_H = 3'd0;
+    localparam IDLE = 3'd1;
+    localparam LINEAR_1 = 3'd2;
+    localparam LINEAR_2 = 3'd3;
+    localparam GRU_X = 3'd4;
+    localparam PREPARE_HEAD = 3'd5;
+    localparam CLS_HEAD = 3'd6;
 
-    logic [2:0] state = IDLE;
-    logic [2:0] state_reg = IDLE;
+    logic [2:0] state = TAKEOFF;
+    logic [2:0] state_reg = TAKEOFF;
     logic [3:0] layer = 0;
     logic en;
     logic en_read_w;
@@ -43,6 +44,7 @@ module gru_head #(
     logic [PRECISION-1:0] i_r [HEAD_DIM-1:0];
     logic [PRECISION-1:0] i_z [HEAD_DIM-1:0];
     logic [PRECISION-1:0] i_n [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] h_old [HEAD_DIM-1:0] = '{default: 127};
     logic [PRECISION-1:0] h_r [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_z [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_n [HEAD_DIM-1:0];
@@ -57,75 +59,110 @@ module gru_head #(
     logic is_relu_read_w = 0;
     logic is_relu_mul = 0;
 
+    logic i_r_ready = 0;
+    logic i_z_ready = 0;
+    logic i_n_ready = 0;
+
     // Control state machine
     always @(posedge clk) begin
         if (reset) begin
-            state <= IDLE;
+            state <= TAKEOFF;
             counter <= '0;
-            en <= '0;
+            en <= 0;
             en_read_w <= '0;
             en_in_mul <= '0;
             layer <= '0;
-            is_relu <= '1;
-            is_relu_read_w <= '1;
-            is_relu_mul <= 1;
+            is_relu <= 0;
+            is_relu_read_w <= 0;
+            is_relu_mul <= 0;
             delay_one <= 0;
+            i_r_ready <= 0;
+            i_z_ready <= 0;
+            i_n_ready <= 0;
         end else begin
             case(state)
+                TAKEOFF: begin
+                    en <= 1;
+                    state <= GRU_H;
+                    features <= '{default: 127};
+                end
+                GRU_H: begin
+                    if (counter < ((HEAD_DIM*2)+ITERATIONS)-1) counter <= counter + 1;
+                    if (counter == ITERATIONS-1) counter <= HEAD_DIM;
+                    if (counter == ((HEAD_DIM)+ITERATIONS)-1) counter <= HEAD_DIM*2;                    
+                    if (counter == ((HEAD_DIM*2)+ITERATIONS)-1) en <= 0;
+
+                    if (counter_mul_out == HEAD_DIM) begin
+                        h_r <= output_linear;
+                    end
+                    if (counter_mul_out == HEAD_DIM*2 ) begin
+                        h_z <= output_linear;
+                    end
+                    if (counter_mul_out == ((HEAD_DIM*2)+ITERATIONS)-1) delay_one <= 1;
+                    if (counter_mul_out == ((HEAD_DIM*2)+ITERATIONS)-1 && delay_one) begin
+                        state <= IDLE;
+                        delay_one <= 0;
+                        counter <= HEAD_DIM*3;
+                        h_n <= output_linear;
+                    end
+                end
                 IDLE: begin
                     if (in_valid) begin
-                        state <= state+1;
-                        counter <= '0;
+                        state <= LINEAR_1;
                         en <= 1;
-                        is_relu <= '1;
-                        layer <= '0;
+                        is_relu <= 1;
+                        layer <= 1;
                         features <= in_features;
                     end
                 end
                 LINEAR_1: begin
-                    if (counter < ITERATIONS-1) counter <= counter + 1;
-                    if (counter == ITERATIONS-1) en <= 0;
-                    if (counter_mul_out == ITERATIONS-1) delay_one <= 1;
-                    if ((counter_mul_out == ITERATIONS-1) && delay_one) begin
+                    if (counter < ((HEAD_DIM*3)+ITERATIONS)-1) counter <= counter + 1;
+                    if (counter == ((HEAD_DIM*3)+ITERATIONS)-1) en <= 0;
+                    if (counter_mul_out == ((HEAD_DIM*3)+ITERATIONS)-1) delay_one <= 1;
+                    if ((counter_mul_out == ((HEAD_DIM*3)+ITERATIONS)-1) && delay_one) begin
                         delay_one <= 0;
-                        counter <= HEAD_DIM;
-                        state <= state+1;
+                        counter <= HEAD_DIM*4;
+                        state <= LINEAR_2;
                         en <= '1;
-                        layer <= 1;
+                        layer <= 2;
                         features <= output_linear;
                     end
                 end
                 LINEAR_2: begin
-                    if (counter < (HEAD_DIM+ITERATIONS)-1) counter <= counter + 1;
-                    if (counter == (HEAD_DIM+ITERATIONS)-1) en <= 0;
-                    if (counter_mul_out == (HEAD_DIM+ITERATIONS)-1) delay_one <= 1;
-                    if ((counter_mul_out == (HEAD_DIM+ITERATIONS)-1) && delay_one) begin
-                        state <= state+1;
-                        counter <= HEAD_DIM*2;
+                    if (counter < ((HEAD_DIM*4)+ITERATIONS)-1) counter <= counter + 1;
+                    if (counter == ((HEAD_DIM*4)+ITERATIONS)-1) en <= 0;
+                    if (counter_mul_out == ((HEAD_DIM*4)+ITERATIONS)-1) delay_one <= 1;
+                    if ((counter_mul_out == ((HEAD_DIM*4)+ITERATIONS)-1) && delay_one) begin
+                        state <= GRU_X;
+                        counter <= HEAD_DIM*5;
                         en <= '1;
-                        layer <= 2;
+                        layer <= 3;
                         delay_one <= 0;
                         is_relu <= 0;
                         features <= output_linear;
                     end
                 end
                 GRU_X: begin
-                    if (counter < ((HEAD_DIM*4)+ITERATIONS)-1) counter <= counter + 1;
-                    if (counter == ((HEAD_DIM*2)+ITERATIONS)-1) counter <= HEAD_DIM*3;
-                    if (counter == ((HEAD_DIM*3)+ITERATIONS)-1) counter <= HEAD_DIM*4;                    
-                    if (counter == ((HEAD_DIM*4)+ITERATIONS)-1) en <= 0;
+                    if (counter < ((HEAD_DIM*7)+ITERATIONS)-1) counter <= counter + 1;
+                    if (counter == ((HEAD_DIM*5)+ITERATIONS)-1) counter <= HEAD_DIM*6;
+                    if (counter == ((HEAD_DIM*6)+ITERATIONS)-1) counter <= HEAD_DIM*7;                    
+                    if (counter == ((HEAD_DIM*7)+ITERATIONS)-1) en <= 0;
 
-                    if (counter_mul_out == HEAD_DIM*3) begin
+                    if (counter_mul_out == HEAD_DIM*6) begin
                         i_r <= output_linear;
+                        i_r_ready <= 1;
                     end
-                    if (counter_mul_out == HEAD_DIM*4 ) begin
+                    if (counter_mul_out == HEAD_DIM*7 ) begin
                         i_z <= output_linear;
+                        i_z_ready <= 1;
                     end
-                    if (counter_mul_out == ((HEAD_DIM*4)+ITERATIONS)-1) delay_one <= 1;
-                    if (counter_mul_out == ((HEAD_DIM*4)+ITERATIONS)-1 && delay_one) begin
+                    if (counter_mul_out == ((HEAD_DIM*7)+ITERATIONS)-1) delay_one <= 1;
+                    if (counter_mul_out == ((HEAD_DIM*7)+ITERATIONS)-1 && delay_one) begin
                         state <= state+1;
                         delay_one <= 0;
                         i_n <= output_linear;
+                        counter <= HEAD_DIM*8;
+                        i_n_ready <= 1;
                     end
                 end
                 // LINEAR_CLS: begin
@@ -138,13 +175,6 @@ module gru_head #(
                 // LINEAR_CONF: begin
                 //     state <= state+1;
                 // end
-                default: begin
-                    counter <= counter + 1;
-                    if (counter == ITERATIONS-1) begin
-                        state <= state+1;
-                        counter <= '0;
-                    end
-                end
             endcase
             en_read_w <= en;
             en_in_mul <= en_read_w;
@@ -252,9 +282,41 @@ module gru_head #(
         output_linear[counter_select+36] <= output2_reg;
     end
 
+    //Hande R path
+    logic i_n_ready = 0;
+    logic [PRECISION-1:0] i_r_reg [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] h_r_reg [HEAD_DIM-1:0];
+    logic [PRECISION:0] r_i_h [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] r_i_lut [HEAD_DIM-1:0];
+
+
+    genvar r;
+    generate
+        for (r = 0; r < HEAD_DIM; r++) begin : add_r_i_h
+            always @(posedge clk) begin
+                if (i_n_ready) begin
+                    r_i_h[r] <= i_r_reg[r] + h_r_reg[r];
+                end
+            end
+            dist_mem_gen_0 lut_sigmoid_r (
+                .clk    ( clk        ),
+                .a      ( r_i_h[r]   ),
+                .qspo   ( r_i_lut[r] )
+            );
+        end
+    endgenerate
+
+    always @(posedge clk) begin
+        if (i_n_ready) begin
+            i_r_reg <= i_r;
+            h_r_reg <= h_r;
+        end
+    end
+
+
     // synthesis translate_off
     always @(posedge clk) begin
-        if (state_reg != IDLE && in_valid) begin
+        if (state != IDLE && in_valid) begin
             $display("GRU HEAD IS BROKEN - OVERFLOW!");
             $stop;
         end
