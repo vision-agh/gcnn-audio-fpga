@@ -53,6 +53,9 @@ module gru_head #(
     logic [PRECISION-1:0] output2_reg;
     logic [PRECISION-1:0] output_linear [HEAD_DIM-1:0];
     logic delay_one = 0;
+    logic is_relu = 0;
+    logic is_relu_read_w = 0;
+    logic is_relu_mul = 0;
 
     // Control state machine
     always @(posedge clk) begin
@@ -63,6 +66,9 @@ module gru_head #(
             en_read_w <= '0;
             en_in_mul <= '0;
             layer <= '0;
+            is_relu <= '1;
+            is_relu_read_w <= '1;
+            is_relu_mul <= 1;
             delay_one <= 0;
         end else begin
             case(state)
@@ -71,6 +77,7 @@ module gru_head #(
                         state <= state+1;
                         counter <= '0;
                         en <= 1;
+                        is_relu <= '1;
                         layer <= '0;
                         features <= in_features;
                     end
@@ -94,19 +101,30 @@ module gru_head #(
                     if (counter_mul_out == (HEAD_DIM+ITERATIONS)-1) delay_one <= 1;
                     if ((counter_mul_out == (HEAD_DIM+ITERATIONS)-1) && delay_one) begin
                         state <= state+1;
+                        counter <= HEAD_DIM*2;
                         en <= '1;
                         layer <= 2;
                         delay_one <= 0;
+                        is_relu <= 0;
                         features <= output_linear;
                     end
                 end
                 GRU_X: begin
-                    if (counter <= (ITERATIONS*5)) counter <= counter + 1;
-                    if (counter == (ITERATIONS*5)) en <= 0;
-                    if (counter_mul_out == (ITERATIONS*3)) i_r <= output_linear;
-                    if (counter_mul_out == (ITERATIONS*4)) i_z <= output_linear;
-                    if (counter_mul_out == (ITERATIONS*5)) begin
+                    if (counter < ((HEAD_DIM*4)+ITERATIONS)-1) counter <= counter + 1;
+                    if (counter == ((HEAD_DIM*2)+ITERATIONS)-1) counter <= HEAD_DIM*3;
+                    if (counter == ((HEAD_DIM*3)+ITERATIONS)-1) counter <= HEAD_DIM*4;                    
+                    if (counter == ((HEAD_DIM*4)+ITERATIONS)-1) en <= 0;
+
+                    if (counter_mul_out == HEAD_DIM*3) begin
+                        i_r <= output_linear;
+                    end
+                    if (counter_mul_out == HEAD_DIM*4 ) begin
+                        i_z <= output_linear;
+                    end
+                    if (counter_mul_out == ((HEAD_DIM*4)+ITERATIONS)-1) delay_one <= 1;
+                    if (counter_mul_out == ((HEAD_DIM*4)+ITERATIONS)-1 && delay_one) begin
                         state <= state+1;
+                        delay_one <= 0;
                         i_n <= output_linear;
                     end
                 end
@@ -130,6 +148,8 @@ module gru_head #(
             endcase
             en_read_w <= en;
             en_in_mul <= en_read_w;
+            is_relu_read_w <= is_relu;
+            is_relu_mul <= is_relu_read_w;
         end
     end
 
@@ -198,6 +218,7 @@ module gru_head #(
         .feature_vector    ( features          ),
         .weight_vector     ( single_weight1    ),
         .bias              ( single_bias1      ),
+        .relu              ( is_relu_mul       ),
         .multiplier        ( multiplier[layer] ),
         .zero_point_weight ( zp_w[layer]       ),
         .zero_point_out    ( zp_o[layer]       ),
@@ -214,6 +235,7 @@ module gru_head #(
         .feature_vector    ( features             ),
         .weight_vector     ( single_weight2       ),
         .bias              ( single_bias2         ),
+        .relu              ( is_relu_mul          ),
         .multiplier        ( multiplier[layer]    ),
         .zero_point_weight ( zp_w[layer]          ),
         .zero_point_out    ( zp_o[layer]          ),

@@ -10,6 +10,7 @@ module vec_mul #(
     input  logic [PRECISION_IN-1:0]  feature_vector [INPUT_DIM-1:0],
     input  logic [PRECISION_OUT-1:0] weight_vector  [INPUT_DIM-1:0],
     input  logic signed [31:0]       bias,
+    input  logic                     relu,
     input  logic [31:0]              multiplier,
     input  logic [PRECISION_OUT-1:0] zero_point_weight,
     input  logic [PRECISION_OUT-1:0] zero_point_out,
@@ -28,10 +29,11 @@ module vec_mul #(
     logic signed [31:0] result_with_sum;
     logic signed [63:0] result_scaled;
 
+    logic                     relu_delayed;
     logic signed [31:0]       bias_delayed;
     logic [31:0]              multiplier_delayed;
-    logic [PRECISION_OUT-1:0]   zero_point_weight_delayed;
-    logic [PRECISION_OUT-1:0]   zero_point_out_delayed;
+    logic [PRECISION_OUT-1:0] zero_point_weight_delayed;
+    logic [PRECISION_OUT-1:0] zero_point_out_delayed;
 
     genvar p;
     generate
@@ -117,11 +119,22 @@ module vec_mul #(
         .odata ( zero_point_out_delayed )
     );
 
+
+    delay_module #(
+        .N        ( 1  ),
+        .DELAY    ( 6  )
+    ) delay_relu (
+        .clk   ( clk          ),
+        .idata ( relu         ),
+        .odata ( relu_delayed )
+    );
+
     always @(posedge clk) begin
         result_with_bias <= $signed(result_reg) + bias_delayed;
         result_with_sum <= result_with_bias - (sum_reg*zero_point_weight_delayed);
         result_scaled <= result_with_sum*$signed(multiplier_delayed);
-        result <= result_scaled > 0 ? (result_scaled>>>32) + result_scaled[31] + zero_point_out_delayed : zero_point_out_delayed;
+        result <= (relu_delayed && result_scaled < 0) ? zero_point_out_delayed :
+                                                        (result_scaled>>>32) + result_scaled[31] + zero_point_out_delayed;
     end
 
 endmodule
