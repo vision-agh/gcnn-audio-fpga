@@ -28,16 +28,16 @@ model.eval().to(device)
 model.model.quantize()
 
 
-model.model.conv1.get_parameters('outputs/conv1.txt')
-model.model.conv2.get_parameters('outputs/conv2.txt')
-model.model.conv3.get_parameters('outputs/conv3.txt')
-model.model.conv4.get_parameters('outputs/conv4.txt')
-model.model.fc1.get_parameters('outputs/fc1.txt')
-model.model.fc2.get_parameters('outputs/fc2.txt')
+model.model.conv1.get_parameters('weights/conv1.txt')
+model.model.conv2.get_parameters('weights/conv2.txt')
+model.model.conv3.get_parameters('weights/conv3.txt')
+model.model.conv4.get_parameters('weights/conv4.txt')
+model.model.fc1.get_parameters('weights/fc1.txt')
+model.model.fc2.get_parameters('weights/fc2.txt')
 
-model.model.rnn.gru.get_parameters('outputs/rnn.txt')
-model.model.cls.get_parameters('outputs/cls.txt')
-model.model.conf.get_parameters('outputs/conf.txt')
+model.model.rnn.gru.get_parameters('weights/rnn.txt')
+model.model.cls.get_parameters('weights/cls.txt')
+model.model.conf.get_parameters('weights/conf.txt')
 # for data in dm.val_dataloader():
 #     for key in data:
 #         if isinstance(data[key], torch.Tensor):

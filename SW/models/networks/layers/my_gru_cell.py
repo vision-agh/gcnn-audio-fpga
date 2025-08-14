@@ -282,7 +282,6 @@ class MyGRUCell(nn.Module):
         new_h = (1 - z) * n + z * h
         return new_h
 
-    @torch.no_grad()
     def forward_calib(self,
                       x: torch.Tensor,
                       h: torch.Tensor) -> torch.Tensor:
@@ -411,7 +410,7 @@ class MyGRUCell(nn.Module):
     def get_parameters(self,
                        file_name: str = None):
         
-        with open('outputs/gru.txt', 'w') as f:
+        with open('weights/gru.txt', 'w') as f:
             '''Save scales and zero points to file.'''
             f.write(f"Input scale ({int(self.num_bits_obs)} bit):\n {int(self.qscale_in)}\n")
             f.write(f"Input zero point:\n {int(self.observer_input.zero_point)}\n")
@@ -455,7 +454,7 @@ class MyGRUCell(nn.Module):
             f.write(f"Scale new_h_zh ({int(self.num_bits_obs)} bit):\n {int(self.qscale_new_h_zh)}\n")
 
             '''Save weights and bias to file.'''
-            weight_ih = torch.flip(self.linear_ih.weight, [0]).T
+            weight_ih = torch.flip(self.linear_ih.weight, [1])
             weight_ih = weight_ih.detach().cpu().numpy().astype(np.int32).tolist()
             
             f.write(f"Weight_ih ({int(self.num_bits)} bit):\n")
@@ -467,7 +466,7 @@ class MyGRUCell(nn.Module):
             f.write(f"\nBias_ih ({int(self.num_bits)} bit):\n {str(bias_ih).replace('[', '{').replace(']', '}') + ';'}\n")
 
             '''Save weights and bias to file.'''
-            weight_hh = torch.flip(self.linear_hh.weight, [0]).T
+            weight_hh = torch.flip(self.linear_hh.weight, [1])
             weight_hh = weight_hh.detach().cpu().numpy().astype(np.int32).tolist()
             
             f.write(f"Weight_hh ({int(self.num_bits)} bit):\n")
@@ -478,13 +477,13 @@ class MyGRUCell(nn.Module):
             bias_hh = bias_hh.detach().cpu().numpy().astype(np.int32).tolist()
             f.write(f"\nBias_hh ({int(self.num_bits)} bit):\n {str(bias_hh).replace('[', '{').replace(']', '}') + ';'}\n")
 
-            weight_ih = torch.flip(self.linear_ih.weight, [0])
-            weight_ih = weight_ih.detach().cpu().numpy().astype(np.int32).tolist()
+            # weight_ih = torch.flip(self.linear_ih.weight, [0])
+            # weight_ih = weight_ih.detach().cpu().numpy().astype(np.int32).tolist()
 
-            weight_hh = torch.flip(self.linear_hh.weight, [0])
-            weight_hh = weight_hh.detach().cpu().numpy().astype(np.int32).tolist()
+            # weight_hh = torch.flip(self.linear_hh.weight, [0])
+            # weight_hh = weight_hh.detach().cpu().numpy().astype(np.int32).tolist()
 
-            with open('outputs/linear_ih.mem', 'w') as f:
+            with open('weights/linear_ih.mem', 'w') as f:
                 for idx, we in enumerate(weight_ih):
                     bin_vec = [np.binary_repr(w+self.weight_ih_observer.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
                     Z1a2 = sum([w + self.weight_ih_observer.zero_point.to(torch.int32).item() for w in we]) * \
@@ -498,7 +497,7 @@ class MyGRUCell(nn.Module):
                     wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
                     f.write(f"{str(wartosc_hex)[2:]}\n")
 
-            with open('outputs/linear_hh.mem', 'w') as f:
+            with open('weights/linear_hh.mem', 'w') as f:
                 for idx, we in enumerate(weight_hh):
                     bin_vec = [np.binary_repr(w+self.weight_hh_observer.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
                     Z1a2 = sum([w + self.weight_hh_observer.zero_point.to(torch.int32).item() for w in we]) * \
@@ -507,12 +506,12 @@ class MyGRUCell(nn.Module):
                                 self.observer_hidden.zero_point.to(torch.int32).item() * \
                                     self.weight_hh_observer.zero_point.to(torch.int32).item()
                     # Concat to bin_vec binary repr of bias
-                    bin_vec = bin_vec + [np.binary_repr(bias_ih[len(bias_ih)-idx-1] - Z1a2 + NZ1Z2, width=32)]
+                    bin_vec = bin_vec + [np.binary_repr(bias_hh[len(bias_hh)-idx-1] - Z1a2 + NZ1Z2, width=32)]
                     dlugi_ciag_bitow = ''.join(bin_vec)
                     wartosc_hex = hex(int(dlugi_ciag_bitow, 2))
                     f.write(f"{str(wartosc_hex)[2:]}\n")
 
-            with open('outputs/lut_sigmoid_r.mem', 'w') as f:
+            with open('weights/lut_sigmoid_r.mem', 'w') as f:
                 f.write(f"memory_initialization_radix={10};\n")
                 f.write(f"memory_initialization_vector=")
                 for idx, val in enumerate(self.lut_sigmoid_r):
@@ -522,7 +521,7 @@ class MyGRUCell(nn.Module):
                     else:
                         f.write(";\n")
 
-            with open('outputs/lut_sigmoid_z.mem', 'w') as f:
+            with open('weights/lut_sigmoid_z.mem', 'w') as f:
                 f.write(f"memory_initialization_radix={10};\n")
                 f.write(f"memory_initialization_vector=")
                 for idx, val in enumerate(self.lut_sigmoid_z):
@@ -532,7 +531,7 @@ class MyGRUCell(nn.Module):
                     else:
                         f.write(";\n")
 
-            with open('outputs/lut_tanh_n.mem', 'w') as f:
+            with open('weights/lut_tanh_n.mem', 'w') as f:
                 f.write(f"memory_initialization_radix={10};\n")
                 f.write(f"memory_initialization_vector=")
                 for idx, val in enumerate(self.lut_tanh_n):
@@ -542,7 +541,7 @@ class MyGRUCell(nn.Module):
                     else:
                         f.write(";\n")
             
-            with open('outputs/lut_rescale_i_n.mem', 'w') as f:
+            with open('weights/lut_rescale_i_n.mem', 'w') as f:
                 f.write(f"memory_initialization_radix={10};\n")
                 f.write(f"memory_initialization_vector=")
                 for idx, val in enumerate(self.lut_rescale_i_n):

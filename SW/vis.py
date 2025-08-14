@@ -21,7 +21,7 @@ def detect_active_range(hist, bin_edges, T_high=None, T_low=None, cooldown_steps
     if T_high is None:
         T_high = np.mean(hist_smoothed) + 0.5 * np.std(hist_smoothed)
     if T_low is None:
-        T_low = 0.2 * T_high
+        T_low = 0.3 * T_high
 
     active = False
     cooldown = 0
