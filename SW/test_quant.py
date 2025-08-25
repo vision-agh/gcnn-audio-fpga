@@ -8,7 +8,7 @@ import multiprocessing as mp
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from models.recognition import LNRecognition
-from data.spiking_digits import SpikingDigits
+from data.spiking_digits_kws import SpikingDigits
 
 import matplotlib.pyplot as plt
 import numpy as np

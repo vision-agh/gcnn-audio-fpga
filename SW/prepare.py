@@ -1,7 +1,7 @@
 import yaml
 import dotmap
 
-from data.spiking_digits import SpikingDigits
+from data.spiking_digits_kws import SpikingDigits
 
 cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
 cfg = dotmap.DotMap(cfg)

@@ -8,10 +8,10 @@ import multiprocessing as mp
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from models.recognition import LNRecognition
-from data.spiking_commands import SpikingCommands
+from data.spiking_commands_kws import SpikingCommands
 
 def main():
-    cfg = yaml.load(open('configs/commands.yaml', 'r'), Loader=yaml.FullLoader)
+    cfg = yaml.load(open('configs/commands-11.yaml', 'r'), Loader=yaml.FullLoader)
     cfg = dotmap.DotMap(cfg)
 
     dm = SpikingCommands(cfg)

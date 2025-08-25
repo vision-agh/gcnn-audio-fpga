@@ -1,26 +1,3 @@
-import yaml
-import dotmap
-import lightning as L
-import torch
-import argparse
-import multiprocessing as mp
-
-from lightning.pytorch.loggers.wandb import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
-from models.recognition import LNRecognition
-from data.spiking_digits_kws import SpikingDigits
-from data.spiking_commands_kws import SpikingCommands
-
-import matplotlib.pyplot as plt
-import numpy as np
-import h5py
-
-file = h5py.File('/home/imperator/Datasets/hdspikes'+ f'/ssc_train.h5', 'r')
-
-print(file['labels'][0])
-print(file['extra']['keys'][:])
-
-labels = file['labels']
 
 label_map = {
     0: 10,   # zero -> unknown
@@ -59,6 +36,3 @@ label_map = {
     33: 10,  # cat -> unknown
     34: 3    # right -> 3
 }
-
-y = torch.tensor(1, dtype=torch.long)
-print(label_map[int(y)])

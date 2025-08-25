@@ -4,8 +4,7 @@ from torch.utils.data import Dataset
 
 import cv2
 import numpy as np
-# from data.augmentations import RandomRemoveNodes, RandomShiftChannel, \
-#     RandomShiftTime, RandomSpreadChannel, RandomSpreadTime
+from data.utils.convert_ssc_cls import label_map
 
 
 def detect_active_range(hist, bin_edges, T_high=None, T_low=None, cooldown_steps=5):
@@ -67,22 +66,6 @@ class SpikingDS(Dataset):
         self.features = config.graph.features
         self.train = train
 
-        # Augmentations
-        # self.random_remove_nodes = RandomRemoveNodes()
-        # self.random_shift_time = RandomShiftTime(time_window=self.time_window)
-        # self.random_shift_channel = RandomShiftChannel(channels=self.num_channels)
-        # self.random_spread_time = RandomSpreadTime(time_window=self.time_window)
-        # self.random_spread_channel = RandomSpreadChannel(channels=self.num_channels)
-
-    def apply_augmentations(self, data):
-        if self.train:
-            data = self.random_remove_nodes(data)
-            data = self.random_shift_time(data)
-            data = self.random_shift_channel(data)
-            data = self.random_spread_time(data)
-            data = self.random_spread_channel(data)
-        return data
-
     def __len__(self) -> int:
         return len(self.files)
     
@@ -90,9 +73,6 @@ class SpikingDS(Dataset):
         data_file = self.files[index]
         data = torch.load(data_file, weights_only=False)
 
-        # data = self.apply_augmentations(data)
-
-        # data['pos'][:, 0] = data['pos'][:, 0] - data['pos'][0, 0] # Start time from 0
         data['pos'][:, 0] *= 1e6 # Convert to microseconds
         data['pos'][:, 0] = torch.round(data['pos'][:, 0]) # Round to nearest microsecond
         data['pos'] = data['pos'][data['pos'][:, 0] < self.time_window] # Cut data to time window
@@ -110,6 +90,10 @@ class SpikingDS(Dataset):
         
         data['edge_index'] = edge_index
         data['x'] = x
+
+        if self.config.general.name == 'Google_Speech_Commands' and \
+              self.config.model.num_classes == 11:
+            data['y'] = torch.tensor(label_map[int(data['y'].item())], dtype=torch.long)
         
         # Normalise node positions
         data['pos'][:, 0] = data['pos'][:, 0] / self.time_window

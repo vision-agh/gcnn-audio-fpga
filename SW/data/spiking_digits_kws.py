@@ -8,7 +8,7 @@ import lightning as L
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from data.dataset import SpikingDS
+from data.kws_dataset import SpikingDS
 
 device = torch.device(torch.cuda.current_device()) if torch.cuda.is_available() else torch.device('cpu')
 

@@ -5,8 +5,8 @@ import torch
 import argparse
 import multiprocessing as mp
 
-from data.spiking_digits import SpikingDigits 
-from data.spiking_commands import SpikingCommands 
+from data.spiking_digits_kws import SpikingDigits 
+from data.spiking_commands_kws import SpikingCommands 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
