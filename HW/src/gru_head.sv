@@ -283,7 +283,6 @@ module gru_head #(
     end
 
     //Hande R path
-    logic i_n_ready = 0;
     logic [PRECISION-1:0] i_r_reg [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_r_reg [HEAD_DIM-1:0];
     logic [PRECISION:0] r_i_h [HEAD_DIM-1:0];
@@ -294,7 +293,7 @@ module gru_head #(
     generate
         for (r = 0; r < HEAD_DIM; r++) begin : add_r_i_h
             always @(posedge clk) begin
-                if (i_n_ready) begin
+                if (i_r_ready) begin
                     r_i_h[r] <= i_r_reg[r] + h_r_reg[r];
                 end
             end
@@ -307,9 +306,39 @@ module gru_head #(
     endgenerate
 
     always @(posedge clk) begin
-        if (i_n_ready) begin
+        if (i_r_ready) begin
             i_r_reg <= i_r;
             h_r_reg <= h_r;
+        end
+    end
+
+    //Hande Z path
+    logic [PRECISION-1:0] i_z_reg [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] h_z_reg [HEAD_DIM-1:0];
+    logic [PRECISION:0] z_i_h [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] z_i_lut [HEAD_DIM-1:0];
+
+
+    genvar z;
+    generate
+        for (z = 0; z < HEAD_DIM; z++) begin : add_z_i_h
+            always @(posedge clk) begin
+                if (i_z_ready) begin
+                    z_i_h[z] <= i_z_reg[z] + h_z_reg[z];
+                end
+            end
+            dist_mem_gen_1 lut_sigmoid_z (
+                .clk    ( clk        ),
+                .a      ( z_i_h[z]   ),
+                .qspo   ( z_i_lut[z] )
+            );
+        end
+    endgenerate
+
+    always @(posedge clk) begin
+        if (i_z_ready) begin
+            i_z_reg <= i_z;
+            h_z_reg <= h_z;
         end
     end
 
