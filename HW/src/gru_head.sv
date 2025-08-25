@@ -48,6 +48,7 @@ module gru_head #(
     logic [PRECISION-1:0] h_r [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_z [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_n [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] h_new [HEAD_DIM-1:0];
 
     logic [PRECISION-1:0] output1;
     logic [PRECISION-1:0] output2;
@@ -286,62 +287,153 @@ module gru_head #(
     logic [PRECISION-1:0] i_r_reg [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_r_reg [HEAD_DIM-1:0];
     logic [PRECISION:0] r_i_h [HEAD_DIM-1:0];
-    logic [PRECISION-1:0] r_i_lut [HEAD_DIM-1:0];
-
+    logic [PRECISION-1:0] r_lut [HEAD_DIM-1:0];
 
     genvar r;
     generate
         for (r = 0; r < HEAD_DIM; r++) begin : add_r_i_h
             always @(posedge clk) begin
-                if (i_r_ready) begin
-                    r_i_h[r] <= i_r_reg[r] + h_r_reg[r];
-                end
+                r_i_h[r] <= i_r_ready ? i_r_reg[r] + h_r_reg[r] : '0;
+                i_r_reg[r] <= i_r_ready ? i_r[r] : '0;
+                h_r_reg[r] <= i_r_ready ? h_r[r] : '0;
             end
             dist_mem_gen_0 lut_sigmoid_r (
-                .clk    ( clk        ),
-                .a      ( r_i_h[r]   ),
-                .qspo   ( r_i_lut[r] )
+                .clk    ( clk      ),
+                .a      ( r_i_h[r] ),
+                .qspo   ( r_lut[r] )
             );
         end
     endgenerate
-
-    always @(posedge clk) begin
-        if (i_r_ready) begin
-            i_r_reg <= i_r;
-            h_r_reg <= h_r;
-        end
-    end
 
     //Hande Z path
     logic [PRECISION-1:0] i_z_reg [HEAD_DIM-1:0];
     logic [PRECISION-1:0] h_z_reg [HEAD_DIM-1:0];
     logic [PRECISION:0] z_i_h [HEAD_DIM-1:0];
-    logic [PRECISION-1:0] z_i_lut [HEAD_DIM-1:0];
-
+    logic [PRECISION-1:0] z_lut [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] r_lut_signed [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] h_n_signed [HEAD_DIM-1:0];
 
     genvar z;
     generate
         for (z = 0; z < HEAD_DIM; z++) begin : add_z_i_h
             always @(posedge clk) begin
-                if (i_z_ready) begin
-                    z_i_h[z] <= i_z_reg[z] + h_z_reg[z];
-                end
+                z_i_h[z] <= i_z_ready ? i_z_reg[z] + h_z_reg[z] : '0;
+                h_n_signed[z] <= i_z_ready ? {1'b0, h_n[z]} : '0;
+                r_lut_signed[z] <= i_z_ready ? {1'b0, r_lut[z]} : '0;
+                i_z_reg[z]<= i_z_ready ? i_z[z] : '0;
+                h_z_reg[z] <= i_z_ready ? h_z[z] : '0;
             end
             dist_mem_gen_1 lut_sigmoid_z (
-                .clk    ( clk        ),
-                .a      ( z_i_h[z]   ),
-                .qspo   ( z_i_lut[z] )
+                .clk    ( clk      ),
+                .a      ( z_i_h[z] ),
+                .qspo   ( z_lut[z] )
             );
         end
     endgenerate
 
-    always @(posedge clk) begin
-        if (i_z_ready) begin
-            i_z_reg <= i_z;
-            h_z_reg <= h_z;
-        end
-    end
+    //Hande N path
+    logic [PRECISION-1:0] r_hn [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] i_n_reg [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] n_scaled [HEAD_DIM-1:0];
+    logic [PRECISION:0] n_sum [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] n_lut [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] z_to_mul [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] h_to_mul [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] z_diff [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] zh_mul [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] zn_mul [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] z_diff_to_mul [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] n_to_mul [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] zh_mul_signed [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] zn_mul_signed [HEAD_DIM-1:0];
 
+    genvar n;
+    generate
+        for (n = 0; n < HEAD_DIM; n++) begin : add_n_i_h
+            always @(posedge clk) begin
+                i_n_reg[n] <= i_n_ready ? i_n[n] : '0;
+                n_sum[n] <= i_n_ready ? n_scaled[n] + r_hn[n] : '0;
+                z_to_mul[n] <= i_n_ready ?  {1'b0, z_lut[n]} : '0;
+                h_to_mul[n] <= i_n_ready ?  {1'b0, h_old[n]} : '0;
+                z_diff[n] <= i_n_ready ? (255-z_lut[n]) : '0;
+                n_to_mul[n] <= i_n_ready ?  {1'b0, n_lut[n]} : '0;
+                z_diff_to_mul[n] <= i_n_ready ?  {1'b0, z_diff[n]} : '0;
+                zh_mul_signed[n] <= i_n_ready ?  {1'b0, zh_mul[n]} : '0;
+                zn_mul_signed[n] <= i_n_ready ?  {1'b0, zn_mul[n]} : '0;
+            end
+            dist_mem_gen_2 lut_n (
+                .clk    ( clk         ),
+                .a      ( i_n_reg[n]  ),
+                .qspo   ( n_scaled[n] )
+            );
+            dist_mem_gen_3 lut_tanh_n (
+                .clk    ( clk      ),
+                .a      ( n_sum[n] ),
+                .qspo   ( n_lut[n] )
+            );
+        end
+    endgenerate
+
+    hammard #(
+        .DIM                ( HEAD_DIM  ),
+        .PRECISION          ( PRECISION ),
+        .MULTIPLIER         ( 28880404  ),
+        .ZERO_POINT_IN_1    ( 0         ),
+        .ZERO_POINT_IN_2    ( 117       ),
+        .ZERO_POINT_OUT     ( 134       )
+    ) mul_r_hn (
+        .clk            ( clk          ),
+        .reset          ( reset        ),
+        .vector_1       ( r_lut_signed ),
+        .vector_2       ( h_n_signed   ),
+        .output_vector  ( r_hn         )
+    );
+
+    hammard #(
+        .DIM                ( HEAD_DIM  ),
+        .PRECISION          ( PRECISION ),
+        .MULTIPLIER         ( 16848104  ),
+        .ZERO_POINT_IN_1    ( 0         ),
+        .ZERO_POINT_IN_2    ( 127       ),
+        .ZERO_POINT_OUT     ( 127       )
+    ) mul_z_h_old (
+        .clk            ( clk      ),
+        .reset          ( reset    ),
+        .vector_1       ( z_to_mul ),
+        .vector_2       ( h_to_mul ),
+        .output_vector  ( zh_mul   )
+    );
+
+    hammard #(
+        .DIM                ( HEAD_DIM  ),
+        .PRECISION          ( PRECISION ),
+        .MULTIPLIER         ( 16846552  ),
+        .ZERO_POINT_IN_1    ( 127       ),
+        .ZERO_POINT_IN_2    ( 0         ),
+        .ZERO_POINT_OUT     ( 127       )
+    ) mul_diff_z_n (
+        .clk            ( clk           ),
+        .reset          ( reset         ),
+        .vector_1       ( n_to_mul      ),
+        .vector_2       ( z_diff_to_mul ),
+        .output_vector  ( zn_mul        )
+    );
+
+    add_vectors_rescale #(
+        .DIM                ( HEAD_DIM       ),
+        .PRECISION          ( PRECISION      ),
+        .MULTIPLIER_IN_1    ( 33'd4293668864 ),
+        .MULTIPLIER_IN_2    ( 33'd4294066176 ),
+        .ZERO_POINT_IN_1    ( 127            ),
+        .ZERO_POINT_IN_2    ( 127            ),
+        .ZERO_POINT_OUT     ( 127            )
+    ) add_zn_zh (
+        .clk                    ( clk ),
+        .reset                  ( reset ),
+        .input_vector_1         ( zh_mul_signed ),
+        .input_vector_2         ( zn_mul_signed ),
+        .output_vector          ( h_new )
+    );
 
     // synthesis translate_off
     always @(posedge clk) begin
