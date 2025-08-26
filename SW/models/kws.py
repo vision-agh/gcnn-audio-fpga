@@ -22,6 +22,10 @@ class LNRecognition(L.LightningModule):
         self.batch_size   = config.train.batch_size
         self.num_classes  = config.model.num_classes            # 11 (10 słów + background)
 
+        # --- NEW: timestamp resolution (ms per timestep) ---
+        # falls back to 10 ms if not provided in the config
+        self.ts_resolution_ms = 10 # ms
+
         # --------- sieć --------------
         self.model = GCN(config)
 
@@ -89,6 +93,24 @@ class LNRecognition(L.LightningModule):
         time_ok = (pred_ts - gt_ts).abs() <= tolerance
         return ((pred_lbl == gt_lbl) & time_ok).float().mean(), (pred_lbl == gt_lbl).float().mean()
 
+    # --- NEW: simple timestamp error metrics ---
+    @staticmethod
+    def _timestamp_errors(
+        conf_logits: torch.Tensor,
+        gt_keyword: torch.Tensor,
+    ):
+        """
+        Returns:
+            mean_abs_dt_steps: mean absolute timestamp error [timesteps]
+            mean_signed_dt_steps: signed bias (pred - gt) [timesteps]
+        """
+        gt_ts   = gt_keyword.argmax(dim=-1)          # [B]
+        pred_ts = conf_logits.argmax(dim=-1)         # [B]
+        dt = (pred_ts - gt_ts).float()               # + => late, - => early
+        mean_abs_dt_steps = dt.abs().mean()
+        mean_signed_dt_steps = dt.mean()
+        return mean_abs_dt_steps, mean_signed_dt_steps
+
     # -------------------------------------------------- train / val / test
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str):
         conf_logits, cls_logits = self.forward(batch)
@@ -118,6 +140,17 @@ class LNRecognition(L.LightningModule):
         )
         self.log(f"{stage}_ts_acc", ts_acc, prog_bar=True, batch_size=self.batch_size, on_epoch=True)
         self.log(f"{stage}_acc",     acc,   prog_bar=True, batch_size=self.batch_size, on_epoch=True)
+
+        # -------- NEW: delta-T metrics (steps + milliseconds)
+        mean_abs_dt_steps, mean_signed_dt_steps = self._timestamp_errors(conf_logits, batch["keyword"])
+        self.log(f"{stage}_dt_abs_steps",    mean_abs_dt_steps,    prog_bar=False, batch_size=self.batch_size, on_epoch=True)
+        self.log(f"{stage}_dt_signed_steps", mean_signed_dt_steps, prog_bar=False, batch_size=self.batch_size, on_epoch=True)
+
+        # also in milliseconds for readability
+        mean_abs_dt_ms    = mean_abs_dt_steps * float(self.ts_resolution_ms)
+        mean_signed_dt_ms = mean_signed_dt_steps * float(self.ts_resolution_ms)
+        self.log(f"{stage}_dt_abs_ms",    mean_abs_dt_ms,    prog_bar=True, batch_size=self.batch_size, on_epoch=True)
+        self.log(f"{stage}_dt_signed_ms", mean_signed_dt_ms, prog_bar=False, batch_size=self.batch_size, on_epoch=True)
 
         return total_loss
 

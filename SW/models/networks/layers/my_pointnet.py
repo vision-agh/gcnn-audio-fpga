@@ -326,7 +326,7 @@ class MyPointNetConv(nn.Module):
                 bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
                 Z1a2 = sum([w + self.observer_weight.zero_point.to(torch.int32).item() for w in we]) * \
                       self.observer_input.zero_point.to(torch.int32).item()
-                NZ1Z2 = self.output_dim * \
+                NZ1Z2 = self.input_dim * \
                             self.observer_input.zero_point.to(torch.int32).item() * \
                                   self.observer_weight.zero_point.to(torch.int32).item()
                 # Concat to bin_vec binary repr of bias

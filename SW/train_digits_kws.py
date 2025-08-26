@@ -7,7 +7,7 @@ import multiprocessing as mp
 
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
-from models.recognition import LNRecognition
+from models.kws import LNRecognition
 from data.spiking_digits_kws import SpikingDigits
 
 def main():
@@ -41,7 +41,7 @@ def main():
     )
 
     trainer = L.Trainer(max_epochs=100, 
-                        log_every_n_steps=1, 
+                        log_every_n_steps=1000, 
                         gradient_clip_val=0.0,
                         logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],
@@ -77,7 +77,7 @@ def main():
     )
 
     trainer = L.Trainer(max_epochs=20,
-                        log_every_n_steps=1, 
+                        log_every_n_steps=1000, 
                         gradient_clip_val=0.0,
                         logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],

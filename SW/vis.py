@@ -57,10 +57,12 @@ def detect_active_range(hist, bin_edges, T_high=None, T_low=None, cooldown_steps
 
 
 def main():
-    cfg = yaml.load(open('configs/commands.yaml', 'r'), Loader=yaml.FullLoader)
+    cfg = yaml.load(open('configs/commands-35.yaml', 'r'), Loader=yaml.FullLoader)
     cfg = dotmap.DotMap(cfg)
     cfg.train.batch_size = 1  # Set batch size to 64
     cfg.train.num_workers = 1  # Set num_workers to 0 for debugging
+    cfg.graph.time_radius = 10000
+    cfg.graph.channel_radius = 30
 
     dm = SpikingCommands(cfg)
     dm.setup()
@@ -74,12 +76,28 @@ def main():
         # visualize the data
 
         plt.figure(figsize=(10, 10))
-        plt.scatter(pos[:, 0], pos[:, 1], c='blue', s=1, label='Lips Points')
-        # for edge in edges.T:
-        #     plt.plot(pos[edge, 0], pos[edge, 1], c='red', linewidth=0.5, alpha=0.5)
+        plt.scatter(pos[:, 0], pos[:, 1], c='black', s=0.2, label='Lips Points')
+
+        # plot edges
+        # for i in range(edges.shape[0]):
+        #     src_idx = edges[i, 0]
+        #     dst_idx = edges[i, 1]
+        #     plt.plot([pos[src_idx, 0], pos[dst_idx, 0]], 
+        #              [pos[src_idx, 1], pos[dst_idx, 1]], 
+        #              c='gray', alpha=0.4, linewidth=1)
+        
+        # crop to [0.5, 0.7] [0.4, 0.6]
         # save in high resolution
-        plt.title('Lips Points Visualization')
-        # plt.savefig('lips_points.png', dpi=300, bbox_inches='tight')
+        # plt.title('Lips Points Visualization')
+        # remove ticks
+        plt.xticks([])
+        plt.yticks([])
+
+        # set aspect to 2 to 1
+        plt.gca().set_aspect(1/2)
+        # plt.xlim(0.8, 0.9)
+        # plt.ylim(0.7, 1)
+        plt.savefig('lips_points.png', dpi=300, bbox_inches='tight')
         plt.show(block=False)
 
         bin_width = 0.01

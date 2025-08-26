@@ -2,7 +2,7 @@ import yaml
 import dotmap
 import lightning as L
 import torch
-from models.recognition import LNRecognition
+from models.kws import LNRecognition
 from data.spiking_digits_kws import SpikingDigits
 from data.kws_dataset import SpikingDS
 

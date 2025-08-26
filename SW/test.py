@@ -7,7 +7,7 @@ import multiprocessing as mp
 
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
-from models.recognition import LNRecognition
+from models.kws import LNRecognition
 from data.spiking_digits_kws import SpikingDigits
 
 import matplotlib.pyplot as plt
@@ -35,7 +35,8 @@ for data in dm.val_dataloader():
             data[key] = data[key].to(device)
     output, cls = model(data)
     cls = torch.softmax(cls, dim=1)  # Apply softmax to the class scores
-    y = data['y'].cpu().numpy()
+    y = data['y'].cpu().numpy().item()
+    print(y)
     print(cls.shape)
     for i in range(cls.shape[2]):
         print(f"Class {i}: {torch.softmax(cls[:,:,i], dim=1)}")
@@ -47,20 +48,26 @@ for data in dm.val_dataloader():
 
     # Visualize the positions
     plt.scatter(pos[:, 0], pos[:, 1], s=1, alpha=0.5)
-    plt.title('Spiking Digits Positions')
-    plt.xlabel('Time')
-    plt.ylabel('Unit')
+    # plt.title('Spiking Digits Positions')
+    # plt.xlabel('Time')
+    # plt.ylabel('Unit')
 
     # visualise the output
     output_np = output.cpu().detach().numpy()
     # create vec of time steps (from 0 to 1 for each 20 sample)
     vec_time = np.linspace(0, 1, output_np.shape[1])
-    plt.plot(vec_time, output_np[0], label='Model Output', color='red')
-    for i in range(20):
-        plt.plot(vec_time, cls[0,i,:].cpu().detach().numpy(), label=f'Class {i} Output', linestyle='--')
-    plt.title(f'Model Output for Sample {y}') 
-    plt.xlabel('Time')
-    plt.ylabel('Output Value')
+    plt.plot(vec_time, output_np[0], label='Conf', color='red')
+    # for i in range(20):
+    #     plt.plot(vec_time, cls[0,i,:].cpu().detach().numpy(), label=f'Cls', linestyle='--')
+    plt.plot(vec_time, cls[0,y,:].cpu().detach().numpy(), label=f'Cls', linestyle='--', color='orange')
+    plt.xticks([])
+    plt.yticks([])
+    # plt.title(f'Model Output for Sample {y}') 
+    # plt.xlabel('Time')
+    # plt.ylabel('Output Value')
     plt.legend()
+    # legend text size 8
+    plt.legend(fontsize=10)
+    # save figure in high resolution
+    plt.savefig(f'output_digit_{y}.svg', dpi=300, bbox_inches='tight')
     plt.show()  # Use block=False to avoid blocking the script
-
