@@ -18,10 +18,10 @@ module feature_gen #(
     output logic      [PRECISION_GEN-1:0]     t_feature,
     output logic      [PRECISION_GEN-1:0]     f_feature
 );
-    logic [$clog2(MAX_EDGES)-1 : 0]             num_edges;
-    logic [$clog2(MAX_EDGES)-1 : 0]             counter,counter_reg;
-    logic [24-1 : 0] t_temp;
-    logic [14-1 : 0] f_temp;
+    logic [7 : 0]                       num_edges;
+    logic [$clog2(MAX_EDGES)-1 : 0]     counter,counter_reg;
+    logic [23 : 0] t_temp;
+    logic [15 : 0] f_temp;
         
     logic [F_WIDTH-1:0] edge_f; 
     logic [T_WIDTH-1:0] edge_t;
@@ -88,37 +88,37 @@ module feature_gen #(
         end
     end
     
-    logic [40-1 : 0] t_average;
-    logic [30-1 : 0] f_average;
-    logic [40+$clog2(T_MULTIPLIER)-1:0] extended_t_average,temp_t_average;
-    logic [30+$clog2(F_MULTIPLIER)-1:0] extended_f_average,temp_f_average;
+    logic [31 : 0] t_average;
+    logic [15 : 0] f_average;
+    logic [63:0] round_t_average,extended_t_average;
+    logic [63:0] round_f_average,extended_f_average;
+
+    assign round_t_average = t_average[1] ? {{(34){1'b0} }, t_average[31:2]} + 1 : {{(34){1'b0} }, t_average[31:2]};
+    assign round_f_average = f_average[1] ? {{(50){1'b0} }, f_average[15:2]} + 1 : {{(50){1'b0} }, f_average[15:2]};
     
-    assign extended_t_average = t_avg_valid && num_edges != 0 ? {{ $clog2(T_MULTIPLIER){1'b0} }, t_average} : '0;
-    assign extended_f_average = f_avg_valid && num_edges != 0 ? {{ $clog2(F_MULTIPLIER){1'b0} }, f_average} : '0;
-    //quantization
-    assign temp_t_average = (extended_t_average * T_MULTIPLIER >>> PRECISION_GEN) + ZERO_POINT;
-    assign temp_f_average = (extended_f_average * F_MULTIPLIER >>> PRECISION_GEN) + ZERO_POINT;
-    //rounding
-    assign t_feature = temp_t_average[PRECISION_GEN-1] ? temp_t_average[PRECISION_GEN+:PRECISION_GEN] + 1 : temp_t_average[PRECISION_GEN+:PRECISION_GEN];
-    assign f_feature = temp_f_average[PRECISION_GEN-1] ? temp_f_average[PRECISION_GEN+:PRECISION_GEN] + 1 : temp_f_average[PRECISION_GEN+:PRECISION_GEN];
-    
+    assign extended_t_average = num_edges != 0 ? round_t_average * T_MULTIPLIER : '0;
+    assign extended_f_average = num_edges != 0 ? round_f_average * F_MULTIPLIER : '0;
+
+    assign t_feature = (extended_t_average>>>32) + extended_t_average[31] + ZERO_POINT;
+    assign f_feature = (extended_f_average>>>32) + extended_f_average[31] + ZERO_POINT;
+
     div_t div_t ( //32 clock latency
         .aclk                   ( clk             ),
-        .s_axis_divisor_tdata   ( num_edges       ),//5bit
+        .s_axis_divisor_tdata   ( num_edges       ),//8 bit
         .s_axis_divisor_tvalid  ( divisor_tvalid  ),
-        .s_axis_dividend_tdata  ( t_temp          ),//24bit
+        .s_axis_dividend_tdata  ( t_temp          ),//24 bit
         .s_axis_dividend_tvalid ( dividend_tvalid ),
-        .m_axis_dout_tdata      ( t_average       ),//39 ~16 15~0
+        .m_axis_dout_tdata      ( t_average       ),//32
         .m_axis_dout_tvalid     ( t_avg_valid     )
     );
-    
+
     div_f div_f (//32 clock latency
         .aclk                   ( clk             ),
-        .s_axis_divisor_tdata   ( num_edges       ),//5bit
+        .s_axis_divisor_tdata   ( num_edges       ),//8 bit
         .s_axis_divisor_tvalid  ( divisor_tvalid  ),
-        .s_axis_dividend_tdata  ( f_temp          ),//14bit
+        .s_axis_dividend_tdata  ( f_temp          ),//16 bit
         .s_axis_dividend_tvalid ( dividend_tvalid ),
-        .m_axis_dout_tdata      ( f_average       ),//29~16 15~0
+        .m_axis_dout_tdata      ( f_average       ),//16
         .m_axis_dout_tvalid     ( f_avg_valid     )
     );
 
