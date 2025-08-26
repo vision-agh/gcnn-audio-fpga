@@ -17,10 +17,10 @@ module gru_head #(
     output logic [PRECISION-1 :0]  out_conf,
     output logic [PRECISION-1 :0]  out_cls [CLS_NUM-1:0]
 );
-
-    logic [31:0]     multiplier [3:0] = {11527193, 18953250, 14189199, 1817144};
-    logic [PRECISION-1:0]  zp_w [3:0] = {119, 110, 157, 131};
-    logic [PRECISION-1:0]  zp_o [3:0] = {117, 136, 147, 117};
+                                    //   CONF | CLASS | GRU_X | LIN_2 | LIN_1 | GRU_H
+    logic [31:0]     multiplier [5:0] = {2994597, 2895858, 11527193, 18953250, 14189199, 1817144};
+    logic [PRECISION-1:0]  zp_w [5:0] = {147, 152, 119, 110, 157, 131};
+    logic [PRECISION-1:0]  zp_o [5:0] = {166, 119, 117, 136, 147, 117};
 
     localparam ITERATIONS = HEAD_DIM/2;
     localparam TAKEOFF = 3'd7;
@@ -34,7 +34,7 @@ module gru_head #(
 
     logic [2:0] state = TAKEOFF;
     logic [2:0] state_reg = TAKEOFF;
-    logic [3:0] layer = 0;
+    logic [3:0] layer, layer_read, layer_in_mul = 0;
     logic en;
     logic en_read_w;
     logic en_in_mul;
@@ -59,7 +59,7 @@ module gru_head #(
     logic is_relu = 0;
     logic is_relu_read_w = 0;
     logic is_relu_mul = 0;
-
+    logic new_h_done = 0;
     logic i_r_ready = 0;
     logic i_z_ready = 0;
     logic i_n_ready = 0;
@@ -79,6 +79,7 @@ module gru_head #(
             delay_one <= 0;
             i_r_ready <= 0;
             i_z_ready <= 0;
+            out_valid <= '0;
             i_n_ready <= 0;
         end else begin
             case(state)
@@ -88,6 +89,7 @@ module gru_head #(
                     features <= '{default: 127};
                 end
                 GRU_H: begin
+                    out_valid <= 0;
                     if (counter < ((HEAD_DIM*2)+ITERATIONS)-1) counter <= counter + 1;
                     if (counter == ITERATIONS-1) counter <= HEAD_DIM;
                     if (counter == ((HEAD_DIM)+ITERATIONS)-1) counter <= HEAD_DIM*2;                    
@@ -159,26 +161,45 @@ module gru_head #(
                     end
                     if (counter_mul_out == ((HEAD_DIM*7)+ITERATIONS)-1) delay_one <= 1;
                     if (counter_mul_out == ((HEAD_DIM*7)+ITERATIONS)-1 && delay_one) begin
-                        state <= state+1;
+                        state <= PREPARE_HEAD;
                         delay_one <= 0;
                         i_n <= output_linear;
                         counter <= HEAD_DIM*8;
                         i_n_ready <= 1;
                     end
                 end
-                // LINEAR_CLS: begin
-                //     counter <= counter + 1;
-                //     if (counter == CLS_NUM-1) begin
-                //         state <= state+1;
-                //         counter <= '0;
-                //     end
-                // end
-                // LINEAR_CONF: begin
-                //     state <= state+1;
-                // end
+                PREPARE_HEAD: begin
+                    if (new_h_done) begin
+                        i_n_ready <= 0;
+                        i_z_ready <= 0;
+                        i_r_ready <= 0;
+                        state <= CLS_HEAD;
+                        en <= '1;
+                        layer <= 4;
+                        features <= h_new;
+                        h_old <= h_new;
+                    end
+                end
+                CLS_HEAD: begin
+                     if (counter < ((HEAD_DIM*8)+CLS_NUM)) counter <= counter + 1;
+                     if (counter == ((HEAD_DIM*8)+CLS_NUM)-1) layer <= 5;
+                     if (counter == ((HEAD_DIM*8)+CLS_NUM)) en <= 0;
+                     if (counter_mul_out == ((HEAD_DIM*8)+CLS_NUM)) delay_one <= 1;
+                     if (counter_mul_out == ((HEAD_DIM*8)+CLS_NUM) && delay_one) begin
+                         state <= GRU_H;
+                         counter <= '0;
+                         out_cls <= output_linear[CLS_NUM-1:0];
+                         out_conf <= output_linear[CLS_NUM];
+                         out_valid <= 1;
+                         en <= 1;
+                         layer <= '0;
+                     end
+                 end
             endcase
             en_read_w <= en;
             en_in_mul <= en_read_w;
+            layer_read <= layer;
+            layer_in_mul <= layer_read;
             is_relu_read_w <= is_relu;
             is_relu_mul <= is_relu_read_w;
         end
@@ -244,16 +265,16 @@ module gru_head #(
         .PRECISION_IN      ( PRECISION  ),
         .PRECISION_OUT     ( PRECISION  )
     ) mul_1 ( // Latency = 7
-        .clk               ( clk               ),
-        .en                ( en_in_mul         ),
-        .feature_vector    ( features          ),
-        .weight_vector     ( single_weight1    ),
-        .bias              ( single_bias1      ),
-        .relu              ( is_relu_mul       ),
-        .multiplier        ( multiplier[layer] ),
-        .zero_point_weight ( zp_w[layer]       ),
-        .zero_point_out    ( zp_o[layer]       ),
-        .result            ( output1           )
+        .clk               ( clk                      ),
+        .en                ( en_in_mul                ),
+        .feature_vector    ( features                 ),
+        .weight_vector     ( single_weight1           ),
+        .bias              ( single_bias1             ),
+        .relu              ( is_relu_mul              ),
+        .multiplier        ( multiplier[layer_in_mul] ),
+        .zero_point_weight ( zp_w[layer_in_mul]       ),
+        .zero_point_out    ( zp_o[layer_in_mul]       ),
+        .result            ( output1                  )
     );
 
     vec_mul #(
@@ -261,16 +282,16 @@ module gru_head #(
         .PRECISION_IN      ( PRECISION  ),
         .PRECISION_OUT     ( PRECISION  )
     ) mul_2 (
-        .clk               ( clk                  ),
-        .en                ( en_in_mul            ),
-        .feature_vector    ( features             ),
-        .weight_vector     ( single_weight2       ),
-        .bias              ( single_bias2         ),
-        .relu              ( is_relu_mul          ),
-        .multiplier        ( multiplier[layer]    ),
-        .zero_point_weight ( zp_w[layer]          ),
-        .zero_point_out    ( zp_o[layer]          ),
-        .result            ( output2              )
+        .clk               ( clk                      ),
+        .en                ( en_in_mul                ),
+        .feature_vector    ( features                 ),
+        .weight_vector     ( single_weight2           ),
+        .bias              ( single_bias2             ),
+        .relu              ( is_relu_mul              ),
+        .multiplier        ( multiplier[layer_in_mul] ),
+        .zero_point_weight ( zp_w[layer_in_mul]       ),
+        .zero_point_out    ( zp_o[layer_in_mul]       ),
+        .result            ( output2                  )
     );
 
 
@@ -433,6 +454,15 @@ module gru_head #(
         .input_vector_1         ( zh_mul_signed ),
         .input_vector_2         ( zn_mul_signed ),
         .output_vector          ( h_new )
+    );
+
+    delay_module #(
+        .N        ( 1 ),
+        .DELAY    ( 14 )
+    ) delay_n_ready (
+        .clk   ( clk        ),
+        .idata ( i_n_ready  ),
+        .odata ( new_h_done )
     );
 
     // synthesis translate_off
