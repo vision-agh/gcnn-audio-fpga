@@ -7,23 +7,23 @@ import multiprocessing as mp
 
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
-from models.kws import LNRecognition
-from data.spiking_digits_kws import SpikingDigits
+from models.recognition import LNRecognition
+from data.spiking_commands import SpikingCommands
 
 def main():
-    cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
+    cfg = yaml.load(open('configs/recognition/commands-35.yaml', 'r'), Loader=yaml.FullLoader)
     cfg = dotmap.DotMap(cfg)
 
-    dm = SpikingDigits(cfg)
+    dm = SpikingCommands(cfg)
+    dm.prepare_data()
     dm.setup()
 
     model = LNRecognition(cfg)
 
-    wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking')
+    wandb_logger = WandbLogger(project='audio_event', name=f'commands_rec')
     wandb_logger.watch(model)
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
-
 
     print(cfg)
     print(model.model)
@@ -34,8 +34,8 @@ def main():
 
     checkpoint_callback = ModelCheckpoint(
         dirpath='checkpoints',
-        filename='best_model_float',
-        monitor='val_ts_acc',
+        filename='best_model_float_commands',
+        monitor='val_acc',
         mode='max',
         save_top_k=1
     )
@@ -64,13 +64,13 @@ def main():
     print("#####################################################################################\n")
 
     cfg.train.lr = 0.00001
-    wandb_logger = WandbLogger(project='audio_event', name=f'hdspiking_qat')
+    wandb_logger = WandbLogger(project='audio_event', name=f'commands_qat_rec')
     wandb_logger.watch(model)
     lr_monitor = LearningRateMonitor(logging_interval='step')
 
     checkpoint_callback = ModelCheckpoint(
         dirpath='checkpoints',
-        filename='best_model_calibrated',
+        filename='best_model_calibrated_commands_rec',
         monitor='val_acc',
         mode='max',
         save_top_k=1

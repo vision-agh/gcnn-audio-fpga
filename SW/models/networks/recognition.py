@@ -1,9 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, PointNetConv, GATConv, GATv2Conv, GINConv, GAT, GIN, global_mean_pool, \
-    global_add_pool, global_max_pool, SplineConv, BatchNorm, PairNorm
 from torch.nn import Module, ModuleList, Linear, Dropout, Sequential
-from torch_geometric.data import Data
 
 
 from models.networks.layers.my_pointnet import MyPointNetConv
@@ -32,51 +29,47 @@ class GCN(Module):
         
         self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=conv_bits[3])
 
-        self.rnn = torch.nn.LSTM(input_size=conv_ch[3], hidden_size=conv_ch[3], num_layers=1, batch_first=True)
-
-        # self.fc1 = Linear(4 * conv_ch[3], linear_ch)
         self.fc1 = Linear(conv_ch[3], linear_ch)
         self.fc2 = Linear(linear_ch, num_classes)
+
+        self.register_buffer('calib_mode', torch.tensor(False, requires_grad=False))
+        self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
 
 
     def forward(self, data):
         outputs = []
+        x, pos, edge_index, batch = data['x'], data['pos'], data['edge_index'], data['batch']
 
-        data.x = self.conv1(data)
-        data.x = self.conv2(data)
-        data.x = self.conv3(data)
-        data.x = self.conv4(data)
-
-        # for i in range(7):
-        #     start = i * 1 / 7
-        #     end = (i + 1) * 1 / 7
-        #     mask = (data.pos[:, 0] >= start) & (data.pos[:, 0] < end)
-
-        #     new_data = Data(pos=data.pos[mask],
-        #                     x=data.x[mask],
-        #                     batch=data.batch[mask])
-
-        #     x = self.pooling(new_data, self.conv4.observer_output)
-        #     out = self.rnn(x.unsqueeze(1))[0].squeeze(1)  # (batch_size, seq_len, hidden_size)
-
-        out = self.pooling(data, self.conv4.observer_output)
-
-        x = self.fc1(out)
-        x = torch.relu(x)
-        # x = F.dropout(x, p=0.5, training=self.training)
+        x = self.conv1(x, pos, edge_index)
+        x = self.conv2(x, pos, edge_index)
+        x = self.conv3(x, pos, edge_index)
+        x = self.conv4(x, pos, edge_index)
+        x = self.pooling(x, batch, self.conv4.observer_output)
+        x = self.fc1(x)
+        if not self.quantize_mode:
+            x = F.relu(x)
+        else:
+            x[x < self.fc1.observer_output.zero_point] = self.fc1.observer_output.zero_point
         x = self.fc2(x)
+
         return x, outputs
     
     def calibrate(self):
+        self.calib_mode.fill_(True)
         self.conv1.calibrate()
         self.conv2.calibrate()
         self.conv3.calibrate()
         self.conv4.calibrate()
         self.pooling.calibrate()
+        self.fc1.calibrate()
+        self.fc2.calibrate()
 
     def quantize(self):
+        self.quantize_mode.fill_(True)
         self.conv1.quantize()
         self.conv2.quantize(observer_input=self.conv1.observer_output)
         self.conv3.quantize(observer_input=self.conv2.observer_output)
         self.conv4.quantize(observer_input=self.conv3.observer_output)
         self.pooling.quantize()
+        self.fc1.quantize(observer_input=self.conv4.observer_output)
+        self.fc2.quantize(observer_input=self.fc1.observer_output)

@@ -50,7 +50,7 @@ public:
                     int n_idx = channel_last_event[n_channel].second;
 
                     if (time - n_time <= time_radius) {
-                        edges.emplace_back(n_idx, idx);
+                        edges.emplace_back(idx, n_idx);
 
                         if (features == "local") {
                             sum_t += (time - n_time);

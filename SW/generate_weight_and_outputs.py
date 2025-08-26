@@ -50,13 +50,20 @@ for data in dm.val_dataloader():
         if isinstance(data[key], torch.Tensor):
             data[key] = data[key].to(device)
 
-
-
 out, cls = model(data)
 print(out)
 
 
 # data = dm[0]
+with open('outputs/events.txt', 'w') as f:
+    for i, (x, pos) in enumerate(zip(data['x'], data['pos'])):
+        t = pos[0]
+        idx = pos[1]
+        ts = (t*1000000+1e-3).round().item()
+        ts = int(ts)
+        idxs = int((idx*700).round().item())
+
+        f.write(f'{ts} {idxs}\n')
 
 with open('outputs/data.txt', 'w') as f:
     for i, (x, pos) in enumerate(zip(data['x'], data['pos'])):
