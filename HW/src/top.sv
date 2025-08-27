@@ -11,28 +11,27 @@ module top #(
     input logic                is_valid,
     input logic                is_last,
 
-   output logic  [$clog2(OUTPUT_DIM_4)-1: 0] out_address, 
-   output logic  [PRECISION_CONV4-1:0]       out_feature,
-   output logic                              out_valid
+    output event_type                   event_test,
+    output edge_type [MAX_EDGES-1:0]    edges_test,
+    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0]
+
+//   output logic  [$clog2(OUTPUT_DIM_4)-1: 0] out_address, 
+//   output logic  [PRECISION_CONV4-1:0]       out_feature,
+//   output logic                              out_valid
 );
 
     localparam string MEMORY_DIR_PATH = "/home/pwz/Repo/gcnn-audio-fpga/HW/mem/";
-    localparam string INIT_PATH_CONV1 = {MEMORY_DIR_PATH, "conv_1_weights.mem"};
+    localparam string INIT_PATH_CONV1 = {MEMORY_DIR_PATH, "conv1.mem"};
     localparam string INIT_PATH_CONV2 = {MEMORY_DIR_PATH, "conv_2_weights.mem"};
     localparam string INIT_PATH_CONV3 = {MEMORY_DIR_PATH, "conv_3_weights.mem"};
     localparam string INIT_PATH_CONV4 = {MEMORY_DIR_PATH, "conv_4_weights.mem"};
 
-    parameter CONV1_MULTIPLIER_DIFF_T = 214742;
-    parameter CONV1_MULTIPLIER_OUT = 58670;
-    parameter CONV1_ZERO_POINT_IN = '0;
-    parameter CONV1_ZERO_POINT_OUT = 36533;
-    parameter CONV1_ZERO_POINT_WEIGHT = 30075;
-    parameter logic [15:0] CONV1_SCALE_IN [21:0] = { 32767, 29490, 26214, 22937,
-                                                     19660, 16383, 13107, 9830, 
-                                                     6553,  3277,  0,     65534,
-                                                     62257, 58981, 55704, 52427,
-                                                     49150, 45874, 42597, 39320, 
-                                                     36044, 32767 };
+    parameter CONV1_MULTIPLIER_DIFF_T = 958724;
+    parameter CONV1_MULTIPLIER_OUT = 101662264;
+    parameter CONV1_ZERO_POINT_IN = 32;
+    parameter CONV1_ZERO_POINT_OUT = 132;
+    parameter CONV1_ZERO_POINT_WEIGHT = 152;
+    parameter logic [7:0] CONV1_SCALE_IN [21:0] = {32, 29, 26, 22, 19, 16, 13, 19, 6, 3, 0, 64, 61, 58, 54, 51, 48, 45, 42, 38, 35, 32};
 
     parameter CONV2_MULTIPLIER_DIFF_T = 12739;
     parameter CONV2_MULTIPLIER_OUT = 114207;
@@ -83,8 +82,8 @@ module top #(
         .f_feature  ( f_feature      )
     );
 
-    assign features_to_conv1[0] = f_feature;
-    assign features_to_conv1[1] = t_feature;
+    assign features_to_conv1[0] = t_feature;
+    assign features_to_conv1[1] = f_feature;
 
      convolution #(
          .PRECISION_IN      ( PRECISION_GEN           ),
@@ -104,90 +103,93 @@ module top #(
          .in_event     ( event_to_conv1    ),
          .in_edges     ( edges_to_conv1    ),
          .in_features  ( features_to_conv1 ),
-         .out_event    ( event_to_conv2    ),
-         .out_edges    ( edges_to_conv2    ),
-         .out_features ( features_to_conv2 )
+         .out_event    ( event_test    ),
+         .out_edges    ( edges_test    ),
+         .out_features ( features_test)
+//         .out_event    ( event_to_conv2    ),
+//         .out_edges    ( edges_to_conv2    ),
+//         .out_features ( features_to_conv2 )
      );
 
-     convolution_reversed #(
-         .PRECISION_IN      ( PRECISION_CONV1         ),
-         .PRECISION_OUT     ( PRECISION_CONV2         ),
-         .INPUT_DIM         ( OUTPUT_DIM_1            ),
-         .OUTPUT_DIM        ( OUTPUT_DIM_2            ),
-         .MULTIPLIER_DIFF_T ( CONV2_MULTIPLIER_DIFF_T ),
-         .ZERO_POINT_IN     ( CONV2_ZERO_POINT_IN     ),
-         .ZERO_POINT_OUT    ( CONV2_ZERO_POINT_OUT    ),
-         .MULTIPLIER_OUT    ( CONV2_MULTIPLIER_OUT    ),
-         .ZERO_POINT_WEIGHT ( CONV2_ZERO_POINT_WEIGHT ),
-         .SCALE_IN          ( CONV2_SCALE_IN          ),
-         .INIT_PATH         ( INIT_PATH_CONV2         ),
-         .DSP               ( 1                       )
-     ) u_conv2 (
-         .clk          ( clk               ),
-         .reset        ( reset             ),
-         .in_event     ( event_to_conv2    ),
-         .in_edges     ( edges_to_conv2    ),
-         .in_features  ( features_to_conv2 ),
-         .out_event    ( event_to_conv3    ),
-         .out_edges    ( edges_to_conv3    ),
-         .out_features ( features_to_conv3 )
-     );
+//     convolution_reversed #(
+//         .PRECISION_IN      ( PRECISION_CONV1         ),
+//         .PRECISION_OUT     ( PRECISION_CONV2         ),
+//         .INPUT_DIM         ( OUTPUT_DIM_1            ),
+//         .OUTPUT_DIM        ( OUTPUT_DIM_2            ),
+//         .MULTIPLIER_DIFF_T ( CONV2_MULTIPLIER_DIFF_T ),
+//         .ZERO_POINT_IN     ( CONV2_ZERO_POINT_IN     ),
+//         .ZERO_POINT_OUT    ( CONV2_ZERO_POINT_OUT    ),
+//         .MULTIPLIER_OUT    ( CONV2_MULTIPLIER_OUT    ),
+//         .ZERO_POINT_WEIGHT ( CONV2_ZERO_POINT_WEIGHT ),
+//         .SCALE_IN          ( CONV2_SCALE_IN          ),
+//         .INIT_PATH         ( INIT_PATH_CONV2         ),
+//         .DSP               ( 1                       )
+//     ) u_conv2 (
+//         .clk          ( clk               ),
+//         .reset        ( reset             ),
+//         .in_event     ( event_to_conv2    ),
+//         .in_edges     ( edges_to_conv2    ),
+//         .in_features  ( features_to_conv2 ),
+//         .out_event    ( event_to_conv3    ),
+//         .out_edges    ( edges_to_conv3    ),
+//         .out_features ( features_to_conv3 )
+//     );
 
-    convolution_reversed #(
-        .PRECISION_IN      ( PRECISION_CONV2         ),
-        .PRECISION_OUT     ( PRECISION_CONV3         ),
-        .INPUT_DIM         ( OUTPUT_DIM_2            ),
-        .OUTPUT_DIM        ( OUTPUT_DIM_3            ),
-        .MULTIPLIER_DIFF_T ( CONV3_MULTIPLIER_DIFF_T ),
-        .ZERO_POINT_IN     ( CONV3_ZERO_POINT_IN     ),
-        .ZERO_POINT_OUT    ( CONV3_ZERO_POINT_OUT    ),
-        .MULTIPLIER_OUT    ( CONV3_MULTIPLIER_OUT    ),
-        .ZERO_POINT_WEIGHT ( CONV3_ZERO_POINT_WEIGHT ),
-        .SCALE_IN          ( CONV3_SCALE_IN          ),
-        .INIT_PATH         ( INIT_PATH_CONV3         )
-    ) u_conv3 (
-        .clk          ( clk               ),
-        .reset        ( reset             ),
-        .in_event     ( event_to_conv3    ),
-        .in_edges     ( edges_to_conv3    ),
-        .in_features  ( features_to_conv3 ),
-        .out_event    ( event_to_conv4    ),
-        .out_edges    ( edges_to_conv4    ),
-        .out_features ( features_to_conv4 )
-    );
+//    convolution_reversed #(
+//        .PRECISION_IN      ( PRECISION_CONV2         ),
+//        .PRECISION_OUT     ( PRECISION_CONV3         ),
+//        .INPUT_DIM         ( OUTPUT_DIM_2            ),
+//        .OUTPUT_DIM        ( OUTPUT_DIM_3            ),
+//        .MULTIPLIER_DIFF_T ( CONV3_MULTIPLIER_DIFF_T ),
+//        .ZERO_POINT_IN     ( CONV3_ZERO_POINT_IN     ),
+//        .ZERO_POINT_OUT    ( CONV3_ZERO_POINT_OUT    ),
+//        .MULTIPLIER_OUT    ( CONV3_MULTIPLIER_OUT    ),
+//        .ZERO_POINT_WEIGHT ( CONV3_ZERO_POINT_WEIGHT ),
+//        .SCALE_IN          ( CONV3_SCALE_IN          ),
+//        .INIT_PATH         ( INIT_PATH_CONV3         )
+//    ) u_conv3 (
+//        .clk          ( clk               ),
+//        .reset        ( reset             ),
+//        .in_event     ( event_to_conv3    ),
+//        .in_edges     ( edges_to_conv3    ),
+//        .in_features  ( features_to_conv3 ),
+//        .out_event    ( event_to_conv4    ),
+//        .out_edges    ( edges_to_conv4    ),
+//        .out_features ( features_to_conv4 )
+//    );
 
-    convolution_reversed #(
-        .PRECISION_IN      ( PRECISION_CONV3         ),
-        .PRECISION_OUT     ( PRECISION_CONV4         ),
-        .INPUT_DIM         ( OUTPUT_DIM_3            ),
-        .OUTPUT_DIM        ( OUTPUT_DIM_4            ),
-        .MULTIPLIER_DIFF_T ( CONV4_MULTIPLIER_DIFF_T ),
-        .ZERO_POINT_IN     ( CONV4_ZERO_POINT_IN     ),
-        .ZERO_POINT_OUT    ( CONV4_ZERO_POINT_OUT    ),
-        .MULTIPLIER_OUT    ( CONV4_MULTIPLIER_OUT    ),
-        .ZERO_POINT_WEIGHT ( CONV4_ZERO_POINT_WEIGHT ),
-        .SCALE_IN          ( CONV4_SCALE_IN          ),
-        .INIT_PATH         ( INIT_PATH_CONV4         )
-    ) u_conv4 (
-        .clk          ( clk               ),
-        .reset        ( reset             ),
-        .in_event     ( event_to_conv4    ),
-        .in_edges     ( edges_to_conv4    ),
-        .in_features  ( features_to_conv4 ),
-        .out_event    ( event_to_avg      ),
-        .out_edges    (                   ),
-        .out_features ( features_to_avg   )
-    );
+//    convolution_reversed #(
+//        .PRECISION_IN      ( PRECISION_CONV3         ),
+//        .PRECISION_OUT     ( PRECISION_CONV4         ),
+//        .INPUT_DIM         ( OUTPUT_DIM_3            ),
+//        .OUTPUT_DIM        ( OUTPUT_DIM_4            ),
+//        .MULTIPLIER_DIFF_T ( CONV4_MULTIPLIER_DIFF_T ),
+//        .ZERO_POINT_IN     ( CONV4_ZERO_POINT_IN     ),
+//        .ZERO_POINT_OUT    ( CONV4_ZERO_POINT_OUT    ),
+//        .MULTIPLIER_OUT    ( CONV4_MULTIPLIER_OUT    ),
+//        .ZERO_POINT_WEIGHT ( CONV4_ZERO_POINT_WEIGHT ),
+//        .SCALE_IN          ( CONV4_SCALE_IN          ),
+//        .INIT_PATH         ( INIT_PATH_CONV4         )
+//    ) u_conv4 (
+//        .clk          ( clk               ),
+//        .reset        ( reset             ),
+//        .in_event     ( event_to_conv4    ),
+//        .in_edges     ( edges_to_conv4    ),
+//        .in_features  ( features_to_conv4 ),
+//        .out_event    ( event_to_avg      ),
+//        .out_edges    (                   ),
+//        .out_features ( features_to_avg   )
+//    );
 
-    average u_average (
-        .clk                 ( clk                  ),
-        .reset               ( reset                ),
-        .in_event_valid      ( event_to_avg.valid   ),
-        .in_features         ( features_to_avg      ),
-        .data_input_finished ( event_to_avg.is_last ),
-        .out_feature         ( out_feature          ),
-        .out_valid           ( out_valid            ),
-        .out_address         ( out_address          )
-     );
+//    average u_average (
+//        .clk                 ( clk                  ),
+//        .reset               ( reset                ),
+//        .in_event_valid      ( event_to_avg.valid   ),
+//        .in_features         ( features_to_avg      ),
+//        .data_input_finished ( event_to_avg.is_last ),
+//        .out_feature         ( out_feature          ),
+//        .out_valid           ( out_valid            ),
+//        .out_address         ( out_address          )
+//     );
 
 endmodule : top

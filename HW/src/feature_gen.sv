@@ -93,11 +93,11 @@ module feature_gen #(
     logic [63:0] round_t_average,extended_t_average;
     logic [63:0] round_f_average,extended_f_average;
 
-    assign round_t_average = t_average[1] ? {{(34){1'b0} }, t_average[31:2]} + 1 : {{(34){1'b0} }, t_average[31:2]};
-    assign round_f_average = f_average[1] ? {{(50){1'b0} }, f_average[15:2]} + 1 : {{(50){1'b0} }, f_average[15:2]};
+    assign round_t_average =  {{(34){1'b0} }, t_average[31:2]};
+    assign round_f_average =  {{(50){1'b0} }, f_average[15:2]};
     
-    assign extended_t_average = num_edges != 0 ? round_t_average * T_MULTIPLIER : '0;
-    assign extended_f_average = num_edges != 0 ? round_f_average * F_MULTIPLIER : '0;
+    assign extended_t_average = num_edges != 0 ? (round_t_average+t_average[1]) * T_MULTIPLIER : '0;
+    assign extended_f_average = num_edges != 0 ? (round_f_average+f_average[1]) * F_MULTIPLIER : '0;
 
     assign t_feature = (extended_t_average>>>32) + extended_t_average[31] + ZERO_POINT;
     assign f_feature = (extended_f_average>>>32) + extended_f_average[31] + ZERO_POINT;

@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module vec_mul #(
+module vec_mul_conv1 #(
     parameter int INPUT_DIM = 4,
     parameter int PRECISION_IN = 8,
     parameter int PRECISION_OUT = 8
@@ -17,10 +17,9 @@ module vec_mul #(
     output logic [PRECISION_OUT-1:0] result
 );
     
-    localparam IS_OFFSET = (INPUT_DIM % 9 == 0) ? 0 : 1;
-    localparam PARALLEL = (INPUT_DIM - (2*IS_OFFSET)) / 9;
-    logic [31:0] results_reg [PARALLEL:0];
-    logic [31:0] sums_reg [PARALLEL:0];
+    localparam PARALLEL = INPUT_DIM/2;
+    logic [31:0] results_reg [PARALLEL-1:0];
+    logic [31:0] sums_reg [PARALLEL-1:0];
     logic [31:0] result_reg_accumulate;
     logic [31:0] sum_reg_accumulate;
     logic [31:0] result_reg;
@@ -38,34 +37,17 @@ module vec_mul #(
     genvar p;
     generate
         for (p = 0; p < PARALLEL; p++) begin : multiply
-            vec_mul_nine #(
+            vec_mul_double #(
                 .PRECISION_F     ( PRECISION_IN   ),
                 .PRECISION_W     ( PRECISION_OUT  )
             ) u_word_mul (
                 .clk       ( clk                               ),
                 .en        ( en                                ),
-                .features  ( feature_vector[(9*(p+1))-1:(9*p)] ),
-                .weights   ( weight_vector[(9*(p+1))-1:(9*p)]  ),
+                .features  ( feature_vector[(2*(p+1))-1:(2*p)] ),
+                .weights   ( weight_vector[(2*(p+1))-1:(2*p)]  ),
                 .sum       ( sums_reg[p]                       ),
                 .result    ( results_reg[p]                    )
             );
-        end
-        if ( IS_OFFSET ) begin
-            vec_mul_double #(
-                .PRECISION_F     ( PRECISION_IN   ),
-                .PRECISION_W     ( PRECISION_OUT  )
-            ) u_word_mul (
-                .clk       ( clk                                                 ),
-                .en        ( en                                                  ),
-                .features  ( feature_vector[((PARALLEL+1)*9)+1:((PARALLEL+1)*9)] ),
-                .weights   ( weight_vector[((PARALLEL+1)*9)+1:((PARALLEL+1)*9)]  ),
-                .sum       ( sums_reg[PARALLEL]                                  ),
-                .result    ( results_reg[PARALLEL]                               )
-            );
-        end
-        else begin
-            assign results_reg[PARALLEL] = '0;
-            assign sums_reg[PARALLEL] = '0;
         end
     endgenerate
 
@@ -74,13 +56,13 @@ module vec_mul #(
         always @(posedge clk) begin
             result_reg_accumulate <= 0;
             sum_reg_accumulate <= 0;
-            for (int j=0; j <= PARALLEL; j=j+1) begin: accumulate
+            for (int j=0; j < PARALLEL; j=j+1) begin: accumulate
                 result_reg_accumulate = result_reg_accumulate + results_reg[j];
                 sum_reg_accumulate = sum_reg_accumulate + sums_reg[j];
             end
             sum_reg <= sum_reg_accumulate;
-            sum_reg2 <= sum_reg;
             result_reg <= result_reg_accumulate;
+            sum_reg2 <= sum_reg;
         end
     endgenerate
 
