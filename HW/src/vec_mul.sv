@@ -55,12 +55,12 @@ module vec_mul #(
                 .PRECISION_F     ( PRECISION_IN   ),
                 .PRECISION_W     ( PRECISION_OUT  )
             ) u_word_mul (
-                .clk       ( clk                                                 ),
-                .en        ( en                                                  ),
-                .features  ( feature_vector[((PARALLEL+1)*9)+1:((PARALLEL+1)*9)] ),
-                .weights   ( weight_vector[((PARALLEL+1)*9)+1:((PARALLEL+1)*9)]  ),
-                .sum       ( sums_reg[PARALLEL]                                  ),
-                .result    ( results_reg[PARALLEL]                               )
+                .clk       ( clk                                     ),
+                .en        ( en                                      ),
+                .features  ( feature_vector[INPUT_DIM-1:INPUT_DIM-2] ),
+                .weights   ( weight_vector[INPUT_DIM-1:INPUT_DIM-2]  ),
+                .sum       ( sums_reg[PARALLEL]                      ),
+                .result    ( results_reg[PARALLEL]                   )
             );
         end
         else begin

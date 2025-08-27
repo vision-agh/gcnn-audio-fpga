@@ -13,7 +13,6 @@ module convolution_reversed #(
     parameter int MULTIPLIER_OUT             = 58670, //good
     parameter int ZERO_POINT_WEIGHT          = 30075,
     parameter string INIT_PATH               = "???",
-    parameter logic DSP                      = 0,
     parameter logic [PRECISION_IN-1:0] SCALE_IN [21:0]   = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
                                                              62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
 )(
@@ -29,9 +28,9 @@ module convolution_reversed #(
 );
 
     logic [$clog2(F_RADIUS):0] counter, counter_reg, counter_read;
-    logic [$clog2(F_RADIUS):0] counter_quant, counter_mul1, counter_mul2, counter_mul_out, counter_compare, counter_acc;
-    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter, outdim_counter_reg, outdim_counter_read, outdim_counter_quant;
-    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter_mul1, outdim_counter_mul2, outdim_counter_mul_out, outdim_counter_compare, outdim_counter_acc;
+    logic [$clog2(F_RADIUS):0] counter_quant, counter_mul_out, counter_compare, counter_acc;
+    logic [$clog2(OUTPUT_DIM/2):0] outdim_counter, outdim_counter_reg, outdim_counter_mul_out, outdim_counter_compare, outdim_counter_acc;
+
     event_type in_event_reg; // fifo output
     edge_type[MAX_EDGES-1:0] in_edges_reg;
     event_type out_event_reg; // fifo output
@@ -55,8 +54,7 @@ module convolution_reversed #(
     // Memory interface signals
     logic [AWIDTH-1:0] addra, addrb;
     logic [DWIDTH-1:0] dinb, douta, doutb;
-    logic ena, wea, web, enb, ena_reg, enb_reg, web_reg;
-    logic ena_quant, enb_quant, ena_mul1, enb_mul1, ena_mul2, enb_mul2, ena_mul_out, enb_mul_out;
+    logic ena, wea, web, enb, ena_reg, enb_reg, web_reg, ena_mul_out, enb_mul_out;
 
     // Context memory instantiation
     memory #(
@@ -133,75 +131,100 @@ module convolution_reversed #(
                     out_event_reg.valid <= '0;
                 end
             end
-            //if (counter_reg != counter_read) begin
-                enb_reg <= enb;
-                ena_reg <= ena;
-                web_reg <= web;
-            //end
-            ena_quant <= ena_reg;
-            ena_mul1 <= ena_quant;
-            ena_mul2 <= ena_mul1;
-            ena_mul_out <= ena_mul2;
-            
-            enb_quant <= enb_reg;
-            enb_mul1 <= enb_quant;
-            enb_mul2 <= enb_mul1;
-            enb_mul_out <= enb_mul2;
+            enb_reg <= enb;
+            ena_reg <= ena;
+            web_reg <= web;
 
             state_reg <= state;
 
             outdim_counter_reg <= outdim_counter;
-            outdim_counter_read <= outdim_counter_reg;
-            outdim_counter_quant <= outdim_counter_read;
-            outdim_counter_mul1 <= outdim_counter_quant;
-            outdim_counter_mul2 <= outdim_counter_mul1;
-            outdim_counter_mul_out <= outdim_counter_mul2;
             outdim_counter_compare <= outdim_counter_mul_out;
             outdim_counter_acc <= outdim_counter_compare;
 
             counter_reg <= counter;
             counter_read <= counter_reg;
             counter_quant <= counter_read;
-            counter_mul1 <= counter_quant;
-            counter_mul2 <= counter_mul1;
-            counter_mul_out <= counter_mul2;
             counter_compare <= counter_mul_out;
             counter_acc <= counter_compare;
         end
     end
 
+    delay_module #(
+        .N        ( $clog2(OUTPUT_DIM/2)+1 ),
+        .DELAY    ( 10                     )
+    ) delay_counter_dim (
+        .clk   ( clk                    ),
+        .idata ( outdim_counter         ),
+        .odata ( outdim_counter_mul_out )
+    );
+
+    delay_module #(
+        .N        ( 1 ),
+        .DELAY    ( 9 )
+    ) delay_ena (
+        .clk   ( clk         ),
+        .idata ( ena         ),
+        .odata ( ena_mul_out )
+    );
+
+    delay_module #(
+        .N        ( 1        ),
+        .DELAY    ( 9        )
+    ) delay_enb (
+        .clk   ( clk         ),
+        .idata ( enb         ),
+        .odata ( enb_mul_out )
+    );
+
+    delay_module #(
+        .N        ( $clog2(F_RADIUS)+1 ),
+        .DELAY    ( 10                     )
+    ) delay_counter (
+        .clk   ( clk             ),
+        .idata ( counter         ),
+        .odata ( counter_mul_out )
+    );
+
+
     /////////////////////////////////////////////////////////////////
     //                      Quantize inputs                        //
     /////////////////////////////////////////////////////////////////
 
-    logic signed [PRECISION_IN:0]   features_a_temp [INPUT_DIM-1:0];
-    logic signed [PRECISION_IN:0]   features_b_temp [INPUT_DIM-1:0];
-    logic signed [PRECISION_IN:0]   features_a [INPUT_DIM+1:0];
-    logic signed [PRECISION_IN:0]   features_b [INPUT_DIM+1:0];
+    logic [PRECISION_IN-1:0] features_a_temp [INPUT_DIM-1:0];
+    logic [PRECISION_IN-1:0] features_b_temp [INPUT_DIM-1:0];
+    logic [PRECISION_IN-1:0] features_a [INPUT_DIM+1:0];
+    logic [PRECISION_IN-1:0] features_b [INPUT_DIM+1:0];
 
     genvar a, b;
     generate
         for (a = 0; a < INPUT_DIM; a++) begin : port_a_assign
             always @(posedge clk) begin
                 features_a_temp[a][PRECISION_IN-1 : 0] = {douta[((PRECISION_IN)*(a+1))-1 : (PRECISION_IN*a)]};
-                features_a_temp[a][PRECISION_IN] = 0;
-                features_a[a] <= ena_reg ? features_a_temp[a]-ZERO_POINT_IN : '0;
+                features_a[a] <= ena_reg ? features_a_temp[a] : '0;
             end
         end
         for (b = 0; b < INPUT_DIM; b++) begin : port_b_assign
             always @(posedge clk) begin
                 features_b_temp[b][PRECISION_IN-1 : 0] = !web_reg ? {doutb[((PRECISION_IN)*(b+1))-1 : (PRECISION_IN*b)]}
                                                                : in_features_reg[b];
-                features_b_temp[b][PRECISION_IN] = 0;
-                features_b[b] <= enb_reg ? features_b_temp[b]-ZERO_POINT_IN : '0;
+                features_b[b] <= enb_reg ? features_b_temp[b] : '0;
             end
         end       
     endgenerate
 
+    logic signed [63:0] dt_expanded_a;
+    logic signed [63:0] dt_expanded_b;
+    logic signed [63:0] dt_scaled_a;
+    logic signed [63:0] dt_scaled_b;
+    assign dt_expanded_a = {{44{1'b0}},in_edges_reg[counter_read].dt};
+    assign dt_expanded_b = {{44{1'b0}},in_edges_reg[F_RADIUS+1+counter_read].dt};
+    assign dt_scaled_a = dt_expanded_a * MULTIPLIER_DIFF_T;
+    assign dt_scaled_b = dt_expanded_b * MULTIPLIER_DIFF_T;
+
     always @(posedge clk) begin
-        features_a[INPUT_DIM] <= ena_reg ? ((in_edges_reg[counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
+        features_a[INPUT_DIM] <= ena_reg ? ZERO_POINT_IN-(dt_scaled_a>>>32)+dt_scaled_a[31] : '0; //dif_t
         features_a[INPUT_DIM+1] <= ena_reg ? SCALE_IN[counter_read] : '0;
-        features_b[INPUT_DIM] <= (enb_reg && counter_read < F_RADIUS) ? ((in_edges_reg[F_RADIUS+1+counter_read].dt * MULTIPLIER_DIFF_T)>>>16) : '0; //dif_t
+        features_b[INPUT_DIM] <= (enb_reg && counter_read < F_RADIUS) ? ZERO_POINT_IN-(dt_scaled_b>>>32)+dt_scaled_b[31]  : ZERO_POINT_IN; //dif_t
         features_b[INPUT_DIM+1] <= (enb_reg) ? SCALE_IN[F_RADIUS+1+counter_read] : '0;
     end
 
@@ -210,27 +233,27 @@ module convolution_reversed #(
     /////////////////////////////////////////////////////////////////
 
     //Prepare weights
-    typedef logic [63 :0] weights_reg_type [8 : 0];
-    typedef logic [575 :0] weights_wire_type;
-    logic [63 : 0]  weight_mem1;
-    logic [63 : 0]  weight_mem2;
+    typedef logic [71 :0] weights_reg_type [8 : 0];
+    typedef logic [647 :0] weights_wire_type;
+    logic [71 : 0]  weight_mem1;
+    logic [71 : 0]  weight_mem2;
     weights_reg_type single_weight1_reg;
     weights_reg_type single_weight2_reg;
     weights_wire_type single_weight1_wire;
     weights_wire_type single_weight2_wire;
 
-    logic signed [PRECISION_OUT:0] prepare_weight1 [INPUT_DIM+1:0];
-    logic signed [31:0]            prepare_bias1;
-    logic signed [PRECISION_OUT:0] prepare_weight2 [INPUT_DIM+1:0];
-    logic signed [31:0]            prepare_bias2;
+    logic signed [PRECISION_OUT-1:0] prepare_weight1 [INPUT_DIM+1:0];
+    logic signed [31:0]              prepare_bias1;
+    logic signed [PRECISION_OUT-1:0] prepare_weight2 [INPUT_DIM+1:0];
+    logic signed [31:0]              prepare_bias2;
 
-    logic signed [PRECISION_OUT:0] single_weight1 [INPUT_DIM+1:0];
-    logic signed [31:0]            single_bias1;
-    logic signed [PRECISION_OUT:0] single_weight2 [INPUT_DIM+1:0];
-    logic signed [31:0]            single_bias2;
+    logic signed [PRECISION_OUT-1:0] single_weight1 [INPUT_DIM+1:0];
+    logic signed [31:0]              single_bias1;
+    logic signed [PRECISION_OUT-1:0] single_weight2 [INPUT_DIM+1:0];
+    logic signed [31:0]              single_bias2;
 
-    localparam WEIGHT_ADDR = ((INPUT_DIM/8)+1)*OUTPUT_DIM;
-    localparam WEIGHT_DATA = 64;
+    localparam WEIGHT_ADDR = ((INPUT_DIM/9)+1)*OUTPUT_DIM;
+    localparam WEIGHT_DATA = 72;
     logic [$clog2(WEIGHT_ADDR) : 0] weight_counter, weight_counter_reg;
     logic                           weight_en, weight_en_reg, weight_en_reg2, weight_en_reg3;
     logic                           load_first, load_weights, load_weights_reg;
@@ -287,8 +310,8 @@ module convolution_reversed #(
         for (w = 0; w < INPUT_DIM; w++) begin : weights_assign
             always @(posedge clk) begin
                 if (weight_en_reg2) begin
-                    prepare_weight1[w] <= single_weight1_wire[((w+1)*8)-1 : (w*8)] - ZERO_POINT_WEIGHT;
-                    prepare_weight2[w] <= single_weight2_wire[((w+1)*8)-1 : (w*8)] - ZERO_POINT_WEIGHT;
+                    prepare_weight1[w+2] <= single_weight1_wire[((w+1)*8)+72 : (w*8)+72];
+                    prepare_weight2[w+2] <= single_weight2_wire[((w+1)*8)+72 : (w*8)+72];
                 end
             end
         end
@@ -303,16 +326,16 @@ module convolution_reversed #(
         weight_en_reg2 <= weight_en_reg;
         weight_en_reg3 <= weight_en_reg2;
         if (weight_en_reg) begin
-            single_weight1_reg[weight_counter_reg] <= weight_mem1;
-            single_weight2_reg[weight_counter_reg] <= weight_mem2;
+            single_weight1_reg[8-weight_counter_reg] <= weight_mem1;
+            single_weight2_reg[8-weight_counter_reg] <= weight_mem2;
         end
         if (weight_en_reg2) begin
-            prepare_bias1 <= single_weight1_wire[543:512];
-            prepare_bias2 <= single_weight2_wire[543:512];
-            prepare_weight1[INPUT_DIM+1] <= single_weight1_wire[575:568] - ZERO_POINT_WEIGHT;
-            prepare_weight2[INPUT_DIM+1] <= single_weight2_wire[575:568] - ZERO_POINT_WEIGHT;
-            prepare_weight1[INPUT_DIM] <= single_weight1_wire[567:560] - ZERO_POINT_WEIGHT;
-            prepare_weight2[INPUT_DIM] <= single_weight2_wire[567:560] - ZERO_POINT_WEIGHT;
+            prepare_bias1 <= single_weight1_wire[31:0];
+            prepare_bias2 <= single_weight2_wire[31:0];
+            prepare_weight1[0] <= single_weight1_wire[39:32];
+            prepare_weight2[0] <= single_weight2_wire[39:32];
+            prepare_weight1[1] <= single_weight1_wire[47:40];
+            prepare_weight2[1] <= single_weight2_wire[47:40];
         end
         if (weight_en_reg3 && !weight_en_reg2) begin
             single_weight1 <= prepare_weight1;
@@ -332,160 +355,102 @@ module convolution_reversed #(
     logic [PRECISION_OUT-1:0] output_features [OUTPUT_DIM-1:0];
 
     //Handle multiplications and outputs
+    vec_mul #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
+    ) mul_a_1 (
+        .clk               ( clk               ),
+        .en                ( !reset            ),
+        .feature_vector    ( features_a        ),
+        .weight_vector     ( single_weight1    ),
+        .bias              ( single_bias1      ),
+        .relu              ( 1'b1              ),
+        .multiplier        ( MULTIPLIER_OUT    ),
+        .zero_point_weight ( ZERO_POINT_WEIGHT ),
+        .zero_point_out    ( ZERO_POINT_OUT    ),
+        .result            ( output_mat_a1     )
+    );
 
-    generate
-        if (!DSP) begin
-            vector_multiplication_2 #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_a_1 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_a      ),
-                .weight_matrix   ( single_weight1  ),
-                .bias            ( single_bias1    ),
-                .output_matrix   ( output_mat_a1   )
-            );
-        
-            vector_multiplication_2 #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_a_2 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_a      ),
-                .weight_matrix   ( single_weight2  ),
-                .bias            ( single_bias2    ),
-                .output_matrix   ( output_mat_a2   )
-            );
-        
-            vector_multiplication_2 #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_b_1 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_b      ),
-                .weight_matrix   ( single_weight1  ),
-                .bias            ( single_bias1    ),
-                .output_matrix   ( output_mat_b1   )
-            );
-        
-            vector_multiplication_2 #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_b_2 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_b      ),
-                .weight_matrix   ( single_weight2  ),
-                .bias            ( single_bias2    ),
-                .output_matrix   ( output_mat_b2   )
-            );
-        end
-        else begin
-            vector_multiplication_dsp #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_a_1 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_a      ),
-                .weight_matrix   ( single_weight1  ),
-                .bias            ( single_bias1    ),
-                .output_matrix   ( output_mat_a1   )
-            );
-        
-            vector_multiplication_dsp #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_a_2 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_a      ),
-                .weight_matrix   ( single_weight2  ),
-                .bias            ( single_bias2    ),
-                .output_matrix   ( output_mat_a2   )
-            );
-        
-            vector_multiplication_dsp #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_b_1 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_b      ),
-                .weight_matrix   ( single_weight1  ),
-                .bias            ( single_bias1    ),
-                .output_matrix   ( output_mat_b1   )
-            );
-        
-            vector_multiplication_dsp #(
-                .INPUT_DIM         ( INPUT_DIM+2    ),
-                .MULTIPLIER        ( MULTIPLIER_OUT ),
-                .ZERO_POINT        ( ZERO_POINT_OUT ),
-                .PRECISION_IN      ( PRECISION_IN   ),
-                .PRECISION_OUT     ( PRECISION_OUT  )
-            ) mul_b_2 (
-                .clk             ( clk             ),
-                .reset           ( reset           ),
-                .feature_matrix  ( features_b      ),
-                .weight_matrix   ( single_weight2  ),
-                .bias            ( single_bias2    ),
-                .output_matrix   ( output_mat_b2   )
-            );
-        end
-    endgenerate
+    vec_mul #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
+    ) mul_a_2 (
+        .clk               ( clk               ),
+        .en                ( !reset            ),
+        .feature_vector    ( features_a        ),
+        .weight_vector     ( single_weight2    ),
+        .bias              ( single_bias2      ),
+        .relu              ( 1'b1              ),
+        .multiplier        ( MULTIPLIER_OUT    ),
+        .zero_point_weight ( ZERO_POINT_WEIGHT ),
+        .zero_point_out    ( ZERO_POINT_OUT    ),
+        .result            ( output_mat_a2     )
+    );
+
+    vec_mul #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
+    ) mul_b_1 (
+        .clk               ( clk               ),
+        .en                ( !reset            ),
+        .feature_vector    ( features_b        ),
+        .weight_vector     ( single_weight1    ),
+        .bias              ( single_bias1      ),
+        .relu              ( 1'b1              ),
+        .multiplier        ( MULTIPLIER_OUT    ),
+        .zero_point_weight ( ZERO_POINT_WEIGHT ),
+        .zero_point_out    ( ZERO_POINT_OUT    ),
+        .result            ( output_mat_b1     )
+    );
+
+    vec_mul #(
+        .INPUT_DIM         ( INPUT_DIM+2    ),
+        .PRECISION_IN      ( PRECISION_IN   ),
+        .PRECISION_OUT     ( PRECISION_OUT  )
+    ) mul_b_2 (
+        .clk               ( clk               ),
+        .en                ( !reset            ),
+        .feature_vector    ( features_b        ),
+        .weight_vector     ( single_weight2    ),
+        .bias              ( single_bias2      ),
+        .relu              ( 1'b1              ),
+        .multiplier        ( MULTIPLIER_OUT    ),
+        .zero_point_weight ( ZERO_POINT_WEIGHT ),
+        .zero_point_out    ( ZERO_POINT_OUT    ),
+        .result            ( output_mat_b2     )
+    );
 
     always @(posedge clk) begin
         output_mat_a_full[outdim_counter_mul_out] <= ena_mul_out ? output_mat_a1 : '0;
-        output_mat_a_full[outdim_counter_mul_out+32] <= ena_mul_out ? output_mat_a2 : '0;
+        output_mat_a_full[outdim_counter_mul_out+36] <= ena_mul_out ? output_mat_a2 : '0;
         output_mat_b_full[outdim_counter_mul_out] <= enb_mul_out ? output_mat_b1 : '0;
-        output_mat_b_full[outdim_counter_mul_out+32] <= enb_mul_out ? output_mat_b2 : '0;
+        output_mat_b_full[outdim_counter_mul_out+36] <= enb_mul_out ? output_mat_b2 : '0;
     end
 
     always @(posedge clk) begin
         output_mat_full[outdim_counter_compare] <= output_mat_a_full[outdim_counter_compare] > output_mat_b_full[outdim_counter_compare] ? output_mat_a_full[outdim_counter_compare]
                                                                                                                                    : output_mat_b_full[outdim_counter_compare];
-        output_mat_full[outdim_counter_compare+32] <= output_mat_a_full[outdim_counter_compare+32] > output_mat_b_full[outdim_counter_compare+32] ? output_mat_a_full[outdim_counter_compare+32]
-                                                                                                                                   : output_mat_b_full[outdim_counter_compare+32];
+        output_mat_full[outdim_counter_compare+36] <= output_mat_a_full[outdim_counter_compare+36] > output_mat_b_full[outdim_counter_compare+36] ? output_mat_a_full[outdim_counter_compare+36]
+                                                                                                                                   : output_mat_b_full[outdim_counter_compare+36];
 
         if (outdim_counter_acc == 0 && counter_acc == 0) begin
             output_features <= '{default:ZERO_POINT_OUT};;
-            output_features[outdim_counter_acc] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc];
-            output_features[outdim_counter_acc+32] <= ZERO_POINT_OUT >= output_mat_full[outdim_counter_acc+32] ? ZERO_POINT_OUT : output_mat_full[outdim_counter_acc+32];
+            output_features[outdim_counter_acc] <= output_mat_full[outdim_counter_acc];
+            output_features[outdim_counter_acc+36] <= output_mat_full[outdim_counter_acc+36];
         end
         else begin
             output_features[outdim_counter_acc] <= output_features[outdim_counter_acc] > output_mat_full[outdim_counter_acc] ? output_features[outdim_counter_acc] : output_mat_full[outdim_counter_acc];
-            output_features[outdim_counter_acc+32] <= output_features[outdim_counter_acc+32] > output_mat_full[outdim_counter_acc+32] ? output_features[outdim_counter_acc+32] : output_mat_full[outdim_counter_acc+32];
+            output_features[outdim_counter_acc+36] <= output_features[outdim_counter_acc+36] > output_mat_full[outdim_counter_acc+36] ? output_features[outdim_counter_acc+36] : output_mat_full[outdim_counter_acc+36];
         end
         out_features <= output_features;
     end
 
     delay_module #(
         .N        ( 32 ),
-        .DELAY    ( 8  )
+        .DELAY    ( 12  )
     ) delay_event (
         .clk   ( clk     ),
         .idata ( {out_event_reg} ),
@@ -493,8 +458,8 @@ module convolution_reversed #(
     );
 
     delay_module #(
-        .N        ( 357 ),
-        .DELAY    ( 8   )
+        .N        ( 441 ),
+        .DELAY    ( 12   )
     ) delay_edge (
         .clk   ( clk     ),
         .idata ( {out_edges_reg} ),
