@@ -201,7 +201,7 @@ class MyPointNetConv(nn.Module):
         msg = torch.clamp(msg, 0, 2**self.num_bits - 1)
 
         '''Update graph features.'''
-        unique_positions, indices = torch.unique(edge_index[:,1], dim=0, return_inverse=True)
+        unique_positions, indices = torch.unique(edge_index[:,0], dim=0, return_inverse=True)
         expanded_indices = indices.unsqueeze(1).expand(-1, self.output_dim)
         pooled_features = torch.zeros((unique_positions.size(0), self.output_dim), dtype=x.dtype, device=x.device)
         pooled_features = pooled_features.scatter_reduce(0, expanded_indices, msg, reduce="amax", include_self=False)
