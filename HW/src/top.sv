@@ -11,13 +11,17 @@ module top #(
     input logic                is_valid,
     input logic                is_last,
 
+    output logic                       out_valid,
+    output logic [PRECISION_GEN-1 :0]  out_conf,
+    output logic [PRECISION_GEN-1 :0]  out_cls [CLS_NUM-1:0]
+
 //    output event_type                   event_test,
 //    output edge_type [MAX_EDGES-1:0]    edges_test,
-    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0],
+//    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0],
 
 //   output logic  [$clog2(OUTPUT_DIM_4)-1: 0] out_address, 
 //   output logic  [PRECISION_CONV4-1:0]       out_feature,
-    output logic                              out_valid
+//   output logic                              out_valid
 );
 
     localparam string MEMORY_DIR_PATH = "/home/pwz/Repo/gcnn-audio-fpga/HW/mem/";
@@ -54,7 +58,7 @@ module top #(
     localparam CONV4_ZERO_POINT_WEIGHT = 149;
     localparam logic [7:0] CONV4_SCALE_IN [21:0] = {130, 130, 130, 130, 129, 129, 129, 129, 129, 129, 129, 131, 131, 131, 131, 131, 131, 131, 130, 130, 130, 130};
 
-    event_type                   event_to_conv1, event_to_conv2, event_to_conv3, event_to_conv4, event_to_avg;
+    event_type                   event_to_conv1, event_to_conv2, event_to_conv3, event_to_conv4, event_to_pool;
     edge_type [MAX_EDGES-1:0]    edges_to_conv1, edges_to_conv2, edges_to_conv3, edges_to_conv4;
     logic [PRECISION_GEN-1:0]    f_feature;
     logic [PRECISION_GEN-1:0]    t_feature;
@@ -62,7 +66,8 @@ module top #(
     logic [PRECISION_CONV1-1 :0] features_to_conv2 [OUTPUT_DIM_1-1 : 0];
     logic [PRECISION_CONV2-1 :0] features_to_conv3 [OUTPUT_DIM_2-1 : 0];
     logic [PRECISION_CONV3-1 :0] features_to_conv4 [OUTPUT_DIM_3-1 : 0];
-    logic [PRECISION_CONV4-1 :0] features_to_avg   [OUTPUT_DIM_4-1 : 0];
+    logic [PRECISION_CONV4-1 :0] features_to_pool   [OUTPUT_DIM_4-1 : 0];
+    logic [PRECISION_CONV4-1 :0] features_to_head   [OUTPUT_DIM_4-1 : 0];
 
     generate_graph u_gen_graph (
         .clk        ( clk            ),
@@ -167,32 +172,30 @@ module top #(
         .in_event     ( event_to_conv4    ),
         .in_edges     ( edges_to_conv4    ),
         .in_features  ( features_to_conv4 ),
-        .out_event    ( event_to_avg      ),
+        .out_event    ( event_to_pool     ),
         .out_edges    (                   ),
-        .out_features ( features_to_avg   )
-//         .out_event    ( event_test    ),
-//         .out_edges    ( edges_test    ),
-//         .out_features ( features_test)
+        .out_features ( features_to_pool  )
     );
 
+    logic head_valid;
+
     maxpool u_pool (
-        .clk          ( clk                ),
-        .reset        ( reset              ),
-        .in_event     ( event_to_avg       ),
-        .in_features  ( features_to_avg    ),
-        .out_features ( features_test      ),
-        .out_valid    ( out_valid          )
+        .clk          ( clk              ),
+        .reset        ( reset            ),
+        .in_event     ( event_to_pool    ),
+        .in_features  ( features_to_pool ),
+        .out_features ( features_to_head ),
+        .out_valid    ( head_valid       )
      );
 
-//    average u_average (
-//        .clk                 ( clk                  ),
-//        .reset               ( reset                ),
-//        .in_event_valid      ( event_to_avg.valid   ),
-//        .in_features         ( features_to_avg      ),
-//        .data_input_finished ( event_to_avg.is_last ),
-//        .out_feature         ( out_feature          ),
-//        .out_valid           ( out_valid            ),
-//        .out_address         ( out_address          )
-//     );
+    gru_head u_head (
+        .clk         ( clk              ),
+        .reset       ( reset            ),
+        .in_valid    ( head_valid       ),
+        .in_features ( features_to_head ),
+        .out_conf    ( out_conf         ),
+        .out_cls     ( out_cls          ),
+        .out_valid   ( out_valid        )
+     );
 
 endmodule : top

@@ -9,6 +9,7 @@ package graph_pkg;
     parameter PRECISION_CONV2  = 8;                    
     parameter PRECISION_CONV3  = 8;                    
     parameter PRECISION_CONV4  = 8;                    
+    parameter CLS_NUM = 20;
 
     parameter T_WIDTH  = 20; //Max of 1000000
     parameter T_DIFF_WIDTH  = 20; //Max of 20000
