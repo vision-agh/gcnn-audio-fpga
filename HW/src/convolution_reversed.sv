@@ -7,13 +7,13 @@ module convolution_reversed #(
     parameter int PRECISION_OUT              = graph_pkg::PRECISION_CONV1,
     parameter int INPUT_DIM                  = 2,
     parameter int OUTPUT_DIM                 = 64,
-    parameter int MULTIPLIER_DIFF_T          = 214742, //good
-    parameter int ZERO_POINT_IN              = 0,  //good
-    parameter int ZERO_POINT_OUT             = 36533, //good
-    parameter int MULTIPLIER_OUT             = 58670, //good
+    parameter int MULTIPLIER_DIFF_T          = 214742,
+    parameter int ZERO_POINT_IN              = 0,
+    parameter int ZERO_POINT_OUT             = 135,
+    parameter int MULTIPLIER_OUT             = 58670,
     parameter int ZERO_POINT_WEIGHT          = 30075,
     parameter string INIT_PATH               = "???",
-    parameter logic [PRECISION_IN-1:0] SCALE_IN [21:0]   = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
+    parameter logic [PRECISION_IN-1:0] SCALE_IN [21:0] = { 32767, 29490, 26214, 22937, 19660, 16383, 13107, 9830, 6553, 3277, 0, 65534,
                                                              62257, 58981, 55704, 52427, 49150, 45874, 42597, 39320, 36044, 32767 }
 )(
     input logic clk,
@@ -437,7 +437,7 @@ module convolution_reversed #(
                                                                                                                                    : output_mat_b_full[outdim_counter_compare+36];
 
         if (outdim_counter_acc == 0 && counter_acc == 0) begin
-            output_features <= '{default:ZERO_POINT_OUT};;
+            output_features <= '{default:'0};
             output_features[outdim_counter_acc] <= output_mat_full[outdim_counter_acc];
             output_features[outdim_counter_acc+36] <= output_mat_full[outdim_counter_acc+36];
         end
