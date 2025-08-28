@@ -11,13 +11,13 @@ module top #(
     input logic                is_valid,
     input logic                is_last,
 
-    output event_type                   event_test,
-    output edge_type [MAX_EDGES-1:0]    edges_test,
-    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0]
+//    output event_type                   event_test,
+//    output edge_type [MAX_EDGES-1:0]    edges_test,
+    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0],
 
 //   output logic  [$clog2(OUTPUT_DIM_4)-1: 0] out_address, 
 //   output logic  [PRECISION_CONV4-1:0]       out_feature,
-//   output logic                              out_valid
+    output logic                              out_valid
 );
 
     localparam string MEMORY_DIR_PATH = "/home/pwz/Repo/gcnn-audio-fpga/HW/mem/";
@@ -167,13 +167,22 @@ module top #(
         .in_event     ( event_to_conv4    ),
         .in_edges     ( edges_to_conv4    ),
         .in_features  ( features_to_conv4 ),
-//        .out_event    ( event_to_avg      ),
-//        .out_edges    (                   ),
-//        .out_features ( features_to_avg   )
-         .out_event    ( event_test    ),
-         .out_edges    ( edges_test    ),
-         .out_features ( features_test)
+        .out_event    ( event_to_avg      ),
+        .out_edges    (                   ),
+        .out_features ( features_to_avg   )
+//         .out_event    ( event_test    ),
+//         .out_edges    ( edges_test    ),
+//         .out_features ( features_test)
     );
+
+    maxpool u_pool (
+        .clk          ( clk                ),
+        .reset        ( reset              ),
+        .in_event     ( event_to_avg       ),
+        .in_features  ( features_to_avg    ),
+        .out_features ( features_test      ),
+        .out_valid    ( out_valid          )
+     );
 
 //    average u_average (
 //        .clk                 ( clk                  ),
