@@ -74,8 +74,7 @@ module convolution #(
         .doutb    ( doutb )
     );
 
-    logic condition_a, condition_b, condition_a_reg, condition_b_reg;
-    edge_type [MAX_EDGES-1:0] edges_reg;
+    logic condition_a, condition_b;
 
     assign ena  = (counter_reg <= F_RADIUS && condition_a && state_reg==CONV) ? 1'b1 : 1'b0;
     assign enb  = (counter_reg <= F_RADIUS && condition_b && state_reg==CONV) ? 1'b1 : web;
@@ -86,8 +85,8 @@ module convolution #(
     assign addra = in_event_reg.f + counter_reg*SKIP_STEP;
     assign addrb = in_event_reg.f - 100 + (counter_reg*SKIP_STEP);
 
-    assign condition_a = in_edges[counter_reg].is_connected;
-    assign condition_b = (counter_reg < F_RADIUS) ? in_edges[F_RADIUS+1+counter_reg].is_connected : 1'b0;
+    assign condition_a = in_edges_reg[counter_reg].is_connected;
+    assign condition_b = (counter_reg < F_RADIUS) ? in_edges_reg[F_RADIUS+1+counter_reg].is_connected : 1'b0;
     logic start;
 
     // Counter and edge processing
@@ -219,11 +218,10 @@ module convolution #(
     assign dt_scaled_a = dt_expanded_a * MULTIPLIER_DIFF_T;
     assign dt_scaled_b = dt_expanded_b * MULTIPLIER_DIFF_T;
 
-
     always @(posedge clk) begin
-        features_a[2] <= ena_reg ? ZERO_POINT_IN-(dt_scaled_a>>>32)+dt_scaled_a[31] : '0; //dif_t
+        features_a[2] <= ena_reg ? ZERO_POINT_IN-(dt_scaled_a>>>32)-dt_scaled_a[31] : '0; //dif_t
         features_a[3] <= ena_reg ? SCALE_IN[counter_read] : '0;
-        features_b[2] <= (enb_reg && counter_read < F_RADIUS) ? ZERO_POINT_IN-(dt_scaled_b>>>32)+dt_scaled_b[31]  : ZERO_POINT_IN; //dif_t
+        features_b[2] <= (enb_reg && counter_read < F_RADIUS) ? ZERO_POINT_IN-(dt_scaled_b>>>32)-dt_scaled_b[31]  : ZERO_POINT_IN; //dif_t
         features_b[3] <= (enb_reg) ? SCALE_IN[F_RADIUS+1+counter_read] : '0;
     end
     /////////////////////////////////////////////////////////////////

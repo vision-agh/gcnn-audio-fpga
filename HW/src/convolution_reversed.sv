@@ -87,8 +87,8 @@ module convolution_reversed #(
     assign addra = in_event_reg.f + counter_reg*SKIP_STEP;
     assign addrb = in_event_reg.f - 100 + (counter_reg*SKIP_STEP);
 
-    assign condition_a = in_edges[counter_reg].is_connected;
-    assign condition_b = (counter_reg < F_RADIUS) ? in_edges[F_RADIUS+1+counter_reg].is_connected : 1'b0;
+    assign condition_a = in_edges_reg[counter_reg].is_connected;
+    assign condition_b = (counter_reg < F_RADIUS) ? in_edges_reg[F_RADIUS+1+counter_reg].is_connected : 1'b0;
     logic start;
 
     // Counter and edge processing
@@ -222,9 +222,9 @@ module convolution_reversed #(
     assign dt_scaled_b = dt_expanded_b * MULTIPLIER_DIFF_T;
 
     always @(posedge clk) begin
-        features_a[INPUT_DIM] <= ena_reg ? ZERO_POINT_IN-(dt_scaled_a>>>32)+dt_scaled_a[31] : '0; //dif_t
+        features_a[INPUT_DIM] <= ena_reg ? ZERO_POINT_IN-(dt_scaled_a>>>32)-dt_scaled_a[31] : '0; //dif_t
         features_a[INPUT_DIM+1] <= ena_reg ? SCALE_IN[counter_read] : '0;
-        features_b[INPUT_DIM] <= (enb_reg && counter_read < F_RADIUS) ? ZERO_POINT_IN-(dt_scaled_b>>>32)+dt_scaled_b[31]  : ZERO_POINT_IN; //dif_t
+        features_b[INPUT_DIM] <= (enb_reg && counter_read < F_RADIUS) ? ZERO_POINT_IN-(dt_scaled_b>>>32)-dt_scaled_b[31]  : ZERO_POINT_IN; //dif_t
         features_b[INPUT_DIM+1] <= (enb_reg) ? SCALE_IN[F_RADIUS+1+counter_read] : '0;
     end
 
@@ -242,15 +242,15 @@ module convolution_reversed #(
     weights_wire_type single_weight1_wire;
     weights_wire_type single_weight2_wire;
 
-    logic signed [PRECISION_OUT-1:0] prepare_weight1 [INPUT_DIM+1:0];
-    logic signed [31:0]              prepare_bias1;
-    logic signed [PRECISION_OUT-1:0] prepare_weight2 [INPUT_DIM+1:0];
-    logic signed [31:0]              prepare_bias2;
+    logic [PRECISION_OUT-1:0] prepare_weight1 [INPUT_DIM+1:0];
+    logic [31:0]              prepare_bias1;
+    logic [PRECISION_OUT-1:0] prepare_weight2 [INPUT_DIM+1:0];
+    logic [31:0]              prepare_bias2;
 
-    logic signed [PRECISION_OUT-1:0] single_weight1 [INPUT_DIM+1:0];
-    logic signed [31:0]              single_bias1;
-    logic signed [PRECISION_OUT-1:0] single_weight2 [INPUT_DIM+1:0];
-    logic signed [31:0]              single_bias2;
+    logic [PRECISION_OUT-1:0] single_weight1 [INPUT_DIM+1:0];
+    logic [31:0]              single_bias1;
+    logic [PRECISION_OUT-1:0] single_weight2 [INPUT_DIM+1:0];
+    logic [31:0]              single_bias2;
 
     localparam WEIGHT_ADDR = ((INPUT_DIM/9)+1)*OUTPUT_DIM;
     localparam WEIGHT_DATA = 72;
@@ -310,8 +310,8 @@ module convolution_reversed #(
         for (w = 0; w < INPUT_DIM; w++) begin : weights_assign
             always @(posedge clk) begin
                 if (weight_en_reg2) begin
-                    prepare_weight1[w+2] <= single_weight1_wire[((w+1)*8)+72 : (w*8)+72];
-                    prepare_weight2[w+2] <= single_weight2_wire[((w+1)*8)+72 : (w*8)+72];
+                    prepare_weight1[w+2] <= single_weight1_wire[((w+1)*8)+71 : (w*8)+72];
+                    prepare_weight2[w+2] <= single_weight2_wire[((w+1)*8)+71 : (w*8)+72];
                 end
             end
         end
