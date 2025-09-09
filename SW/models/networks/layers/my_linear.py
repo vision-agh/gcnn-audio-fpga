@@ -78,11 +78,13 @@ class MyLinear(nn.Module):
         '''Calibration forward for updating observers.'''
         if self.use_obs:
             '''Update input observer.'''
-            self.observer_input.update(x)
+            if self.training:
+                self.observer_input.update(x)
             x = FakeQuantize.apply(x, self.observer_input)
 
         '''Update weight observer and propagate message through linear layer.'''
-        self.observer_weight.update(self.linear.weight.data)
+        if self.training:
+            self.observer_weight.update(self.linear.weight.data)
 
         if self.bias:
             x = F.linear(x, FakeQuantize.apply(self.linear.weight, self.observer_weight), self.linear.bias)
@@ -90,7 +92,8 @@ class MyLinear(nn.Module):
             x = F.linear(x, FakeQuantize.apply(self.linear.weight, self.observer_weight))
         
         '''Update output observer and calculate output.'''
-        self.observer_output.update(x)
+        if self.training:
+            self.observer_output.update(x)
         x = FakeQuantize.apply(x, self.observer_output)
         return x
 

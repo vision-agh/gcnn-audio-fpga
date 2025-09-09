@@ -134,3 +134,27 @@ def vector_out(
                 f.write(str(dx.to(torch.int32).tolist()) + "\n")
 
         
+def vector_out_single(
+    x: torch.Tensor,
+    cfg,
+    name: str,
+) -> dict:
+    """
+    Generate convolution output for the model.
+    
+    Args:
+        x (torch.Tensor): Input tensor.
+        pos (torch.Tensor): Position tensor.
+        edge_index (torch.Tensor): Edge index tensor.
+        batch (torch.Tensor): Batch tensor.
+        cfg (dict): Configuration dictionary.
+    
+    Returns:
+        dict: Dictionary containing the convolution output.
+    """
+    if cfg.debug:
+        with open(name, 'w') as f:
+            for idx in range(x.shape[1]):
+                xd = x.squeeze(0)
+                dx = torch.flip(xd, [0])
+                f.write(str(dx.to(torch.int32).tolist()) + "\n")

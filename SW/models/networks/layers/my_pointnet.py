@@ -140,7 +140,8 @@ class MyPointNetConv(nn.Module):
 
         # fake-quantize inputs
         if self.use_observer_input:
-            self.observer_input.update(msg)
+            if self.training:
+                self.observer_input.update(msg)
             msg = FakeQuantize.apply(msg, self.observer_input)
 
         # if training, run a dummy through BN to update its stats
@@ -155,7 +156,8 @@ class MyPointNetConv(nn.Module):
         W_fused, b_fused = self.merge_norm(running_mean, std)
 
         # fake-quantize fused weights
-        self.observer_weight.update(W_fused)
+        if self.training:
+            self.observer_weight.update(W_fused)
         W_q = FakeQuantize.apply(W_fused, self.observer_weight)
 
         # apply quantized linear with fused bias
@@ -163,8 +165,9 @@ class MyPointNetConv(nn.Module):
 
         '''Update output observer and calculate output.'''
         '''We calibrate based on the output of the Linear and also for diff POS for next layer'''
-        self.observer_output.update(msg)
-        self.observer_output.update(pos_j-pos_i)
+        if self.training:
+            self.observer_output.update(msg)
+            self.observer_output.update(pos_j-pos_i)
         msg = FakeQuantize.apply(msg, self.observer_output)
 
         '''Update graph features.'''
@@ -323,7 +326,7 @@ class MyPointNetConv(nn.Module):
         
         with open(file_name.replace('.txt', '.mem'), 'w') as f:
             for idx, we in enumerate(weight):
-                bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=9)[1:] for w in we]
+                bin_vec = [np.binary_repr(w+self.observer_weight.zero_point.to(torch.int32).item(), width=self.num_bits+1)[1:] for w in we]
                 Z1a2 = sum([w + self.observer_weight.zero_point.to(torch.int32).item() for w in we]) * \
                       self.observer_input.zero_point.to(torch.int32).item()
                 NZ1Z2 = self.input_dim * \

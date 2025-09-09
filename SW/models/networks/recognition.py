@@ -1,11 +1,13 @@
 import torch
 import torch.nn.functional as F
 from torch.nn import Module, ModuleList, Linear, Dropout, Sequential
-
+import numpy as np
 
 from models.networks.layers.my_pointnet import MyPointNetConv
 from models.networks.layers.my_pooling import MyGlobalPooling
+from models.networks.layers.my_linear import MyLinear
 
+from utils.generate_outputs import conv_gen_out, conv_first_gen_out, graph_gen_out, vector_out, vector_out_single
 
 class GCN(Module):
     def __init__(self, 
@@ -29,8 +31,8 @@ class GCN(Module):
         
         self.pooling = MyGlobalPooling(config.model.global_pooling, num_bits=conv_bits[3])
 
-        self.fc1 = Linear(conv_ch[3], linear_ch)
-        self.fc2 = Linear(linear_ch, num_classes)
+        self.fc1 = MyLinear(conv_ch[3], linear_ch, bias= True, num_bits=conv_bits[3])
+        self.fc2 = MyLinear(linear_ch, num_classes, bias=True, num_bits=conv_bits[3])
 
         self.register_buffer('calib_mode', torch.tensor(False, requires_grad=False))
         self.register_buffer('quantize_mode', torch.tensor(False, requires_grad=False))
@@ -39,18 +41,28 @@ class GCN(Module):
     def forward(self, data):
         outputs = []
         x, pos, edge_index, batch = data['x'], data['pos'], data['edge_index'], data['batch']
+        graph_gen_out(x, pos, edge_index, self.config, 'outputs/graph_out.txt')
 
         x = self.conv1(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv1_out.txt')
         x = self.conv2(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv2_out.txt')
         x = self.conv3(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv3_out.txt')
         x = self.conv4(x, pos, edge_index)
+        conv_first_gen_out(x, pos, edge_index, self.config, 'outputs/conv4_out.txt')
         x = self.pooling(x, batch, self.conv4.observer_output)
+        np.savetxt('outputs/pooling.txt', x.detach().cpu().numpy().reshape(-1))
+
         x = self.fc1(x)
         if not self.quantize_mode:
             x = F.relu(x)
         else:
             x[x < self.fc1.observer_output.zero_point] = self.fc1.observer_output.zero_point
+
+        np.savetxt('outputs/fc1.txt', x.detach().cpu().numpy().reshape(-1))
         x = self.fc2(x)
+        np.savetxt('outputs/fc2.txt', x.detach().cpu().numpy().reshape(-1))
 
         return x, outputs
     

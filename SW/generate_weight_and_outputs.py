@@ -3,8 +3,12 @@ import dotmap
 import lightning as L
 import torch
 from models.kws import LNRecognition
-from data.spiking_digits_kws import SpikingDigits
-from data.kws_dataset import SpikingDS
+# from data.spiking_digits_kws import SpikingDigits
+# from data.kws_dataset import SpikingDS
+
+from models.recognition import LNRecognition
+from data.spiking_digits import SpikingDigits
+from data.dataset import SpikingDS
 
 L.seed_everything(42)
 
@@ -31,7 +35,7 @@ dict_convert = { 0: 0,
                 -10: 20,
 }
 
-cfg = yaml.load(open('configs/digits.yaml', 'r'), Loader=yaml.FullLoader)
+cfg = yaml.load(open('configs/recognition/digits.yaml', 'r'), Loader=yaml.FullLoader)
 cfg = dotmap.DotMap(cfg)
 cfg.train.batch_size = 1  # Set batch size to 1 for testing
 cfg.debug = True
@@ -40,7 +44,7 @@ dm = SpikingDigits(cfg)
 dm.setup()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = LNRecognition.load_from_checkpoint('checkpoints/best_model_calibrated.ckpt', config=cfg, strict=False)
+model = LNRecognition.load_from_checkpoint('checkpoints/digits_rec_calibrated.ckpt', config=cfg, strict=False)
 model = model.model
 model.eval().to(device)
 model.quantize()
