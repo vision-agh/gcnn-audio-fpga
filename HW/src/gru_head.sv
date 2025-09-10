@@ -59,7 +59,7 @@ module gru_head #(
     logic is_relu = 0;
     logic is_relu_read_w = 0;
     logic is_relu_mul = 0;
-    logic new_h_done = 0;
+    logic new_h_done;
     logic i_r_ready = 0;
     logic i_z_ready = 0;
     logic i_n_ready = 0;
@@ -309,6 +309,30 @@ module gru_head #(
     logic [PRECISION-1:0] h_r_reg [HEAD_DIM-1:0];
     logic [PRECISION:0] r_i_h [HEAD_DIM-1:0];
     logic [PRECISION-1:0] r_lut [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] r_lut_signed [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] h_n_signed [HEAD_DIM-1:0];
+
+    logic i_r_ready_reg;
+    logic i_r_ready_reg2;
+    logic ready_hammard_r_hn;
+    logic hammard_r_hn_valid;
+
+    delay_module #(
+        .N        ( 1 ),
+        .DELAY    ( 4 )
+    ) delay_read_r (
+        .clk   ( clk           ),
+        .idata ( i_r_ready     ),
+        .odata ( i_r_ready_reg )
+    );
+
+    always @(posedge clk) begin
+        ready_hammard_r_hn <= '0;
+        i_r_ready_reg2 <= i_r_ready_reg;
+        if (i_r_ready_reg == 1 && i_r_ready_reg2 == 0) begin
+            ready_hammard_r_hn <= '1;
+        end
+    end
 
     genvar r;
     generate
@@ -323,6 +347,8 @@ module gru_head #(
                 .a      ( r_i_h[r] ),
                 .qspo   ( r_lut[r] )
             );
+            assign r_lut_signed[r] = {1'b0, r_lut[r]};
+            assign h_n_signed[r] = {1'b0, h_n[r]};
         end
     endgenerate
 
@@ -331,24 +357,50 @@ module gru_head #(
     logic [PRECISION-1:0] h_z_reg [HEAD_DIM-1:0];
     logic [PRECISION:0] z_i_h [HEAD_DIM-1:0];
     logic [PRECISION-1:0] z_lut [HEAD_DIM-1:0];
-    logic signed [PRECISION:0] r_lut_signed [HEAD_DIM-1:0];
-    logic signed [PRECISION:0] h_n_signed [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] z_to_mul [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] h_to_mul [HEAD_DIM-1:0];
+    logic [PRECISION-1:0] z_diff [HEAD_DIM-1:0];
+    logic signed [PRECISION:0] z_diff_to_mul [HEAD_DIM-1:0];
+
+    logic i_z_ready_reg;
+    logic i_z_ready_reg2;
+    logic ready_hammard_z_h_old;
+    logic hammard_z_h_old_valid;
+
+    delay_module #(
+        .N        ( 1 ),
+        .DELAY    ( 4 )
+    ) delay_read_z (
+        .clk   ( clk           ),
+        .idata ( i_z_ready     ),
+        .odata ( i_z_ready_reg )
+    );
+
+    always @(posedge clk) begin
+        ready_hammard_z_h_old <= '0;
+        i_z_ready_reg2 <= i_z_ready_reg;
+        if (i_z_ready_reg == 1 && i_z_ready_reg2 == 0) begin
+            ready_hammard_z_h_old <= '1;
+        end
+    end
 
     genvar z;
     generate
         for (z = 0; z < HEAD_DIM; z++) begin : add_z_i_h
             always @(posedge clk) begin
                 z_i_h[z] <= i_z_ready ? i_z_reg[z] + h_z_reg[z] : '0;
-                h_n_signed[z] <= i_z_ready ? {1'b0, h_n[z]} : '0;
-                r_lut_signed[z] <= i_z_ready ? {1'b0, r_lut[z]} : '0;
                 i_z_reg[z]<= i_z_ready ? i_z[z] : '0;
                 h_z_reg[z] <= i_z_ready ? h_z[z] : '0;
+                z_diff[z] <= i_z_ready_reg2 ? (255-z_lut[z]) : '0;
             end
             dist_mem_gen_1 lut_sigmoid_z (
                 .clk    ( clk      ),
                 .a      ( z_i_h[z] ),
                 .qspo   ( z_lut[z] )
             );
+            assign z_to_mul[z] = {1'b0, z_lut[z]};
+            assign h_to_mul[z] = {1'b0, h_old[z]};
+            assign z_diff_to_mul[z] = {1'b0, z_diff[z]};
         end
     endgenerate
 
@@ -358,15 +410,36 @@ module gru_head #(
     logic [PRECISION-1:0] n_scaled [HEAD_DIM-1:0];
     logic [PRECISION:0] n_sum [HEAD_DIM-1:0];
     logic [PRECISION-1:0] n_lut [HEAD_DIM-1:0];
-    logic signed [PRECISION:0] z_to_mul [HEAD_DIM-1:0];
-    logic signed [PRECISION:0] h_to_mul [HEAD_DIM-1:0];
-    logic [PRECISION-1:0] z_diff [HEAD_DIM-1:0];
     logic [PRECISION-1:0] zh_mul [HEAD_DIM-1:0];
     logic [PRECISION-1:0] zn_mul [HEAD_DIM-1:0];
-    logic signed [PRECISION:0] z_diff_to_mul [HEAD_DIM-1:0];
+
     logic signed [PRECISION:0] n_to_mul [HEAD_DIM-1:0];
     logic signed [PRECISION:0] zh_mul_signed [HEAD_DIM-1:0];
     logic signed [PRECISION:0] zn_mul_signed [HEAD_DIM-1:0];
+
+    logic i_n_ready_reg;
+    logic i_n_ready_reg2;
+    logic ready_hammard_n_z_diff;
+    logic hammard_n_z_diff_valid;
+    logic ready_sum_vec;
+
+    delay_module #(
+        .N        ( 1  ),
+        .DELAY    ( 11 )
+    ) delay_read_n (
+        .clk   ( clk           ),
+        .idata ( i_n_ready     ),
+        .odata ( i_n_ready_reg )
+    );
+
+    always @(posedge clk) begin
+        ready_hammard_n_z_diff <= '0;
+        i_n_ready_reg2 <= i_n_ready_reg;
+        if (i_n_ready_reg == 1 && i_n_ready_reg2 == 0) begin
+            ready_hammard_n_z_diff <= '1;
+        end
+        ready_sum_vec <= hammard_n_z_diff_valid;
+    end
 
     genvar n;
     generate
@@ -374,11 +447,7 @@ module gru_head #(
             always @(posedge clk) begin
                 i_n_reg[n] <= i_n_ready ? i_n[n] : '0;
                 n_sum[n] <= i_n_ready ? n_scaled[n] + r_hn[n] : '0;
-                z_to_mul[n] <= i_n_ready ?  {1'b0, z_lut[n]} : '0;
-                h_to_mul[n] <= i_n_ready ?  {1'b0, h_old[n]} : '0;
-                z_diff[n] <= i_n_ready ? (255-z_lut[n]) : '0;
                 n_to_mul[n] <= i_n_ready ?  {1'b0, n_lut[n]} : '0;
-                z_diff_to_mul[n] <= i_n_ready ?  {1'b0, z_diff[n]} : '0;
                 zh_mul_signed[n] <= i_n_ready ?  {1'b0, zh_mul[n]} : '0;
                 zn_mul_signed[n] <= i_n_ready ?  {1'b0, zn_mul[n]} : '0;
             end
@@ -403,11 +472,13 @@ module gru_head #(
         .ZERO_POINT_IN_2    ( 117       ),
         .ZERO_POINT_OUT     ( 134       )
     ) mul_r_hn (
-        .clk            ( clk          ),
-        .reset          ( reset        ),
-        .vector_1       ( r_lut_signed ),
-        .vector_2       ( h_n_signed   ),
-        .output_vector  ( r_hn         )
+        .clk            ( clk                ),
+        .reset          ( reset              ),
+        .in_valid       ( ready_hammard_r_hn ),
+        .vector_1       ( r_lut_signed       ),
+        .vector_2       ( h_n_signed         ),
+        .output_vector  ( r_hn               ),
+        .out_valid      ( hammard_r_hn_valid )
     );
 
     hammard #(
@@ -418,11 +489,13 @@ module gru_head #(
         .ZERO_POINT_IN_2    ( 127       ),
         .ZERO_POINT_OUT     ( 127       )
     ) mul_z_h_old (
-        .clk            ( clk      ),
-        .reset          ( reset    ),
-        .vector_1       ( z_to_mul ),
-        .vector_2       ( h_to_mul ),
-        .output_vector  ( zh_mul   )
+        .clk            ( clk                   ),
+        .reset          ( reset                 ),
+        .in_valid       ( ready_hammard_z_h_old ),
+        .vector_1       ( z_to_mul              ),
+        .vector_2       ( h_to_mul              ),
+        .output_vector  ( zh_mul                ),
+        .out_valid      ( hammard_z_h_old_valid )
     );
 
     hammard #(
@@ -433,11 +506,13 @@ module gru_head #(
         .ZERO_POINT_IN_2    ( 0         ),
         .ZERO_POINT_OUT     ( 127       )
     ) mul_diff_z_n (
-        .clk            ( clk           ),
-        .reset          ( reset         ),
-        .vector_1       ( n_to_mul      ),
-        .vector_2       ( z_diff_to_mul ),
-        .output_vector  ( zn_mul        )
+        .clk            ( clk                    ),
+        .reset          ( reset                  ),
+        .in_valid       ( ready_hammard_n_z_diff ),
+        .vector_1       ( n_to_mul               ),
+        .vector_2       ( z_diff_to_mul          ),
+        .output_vector  ( zn_mul                 ),
+        .out_valid      ( hammard_n_z_diff_valid )
     );
 
     add_vectors_rescale #(
@@ -451,18 +526,11 @@ module gru_head #(
     ) add_zn_zh (
         .clk                    ( clk ),
         .reset                  ( reset ),
+        .in_valid               ( ready_sum_vec ),
         .input_vector_1         ( zh_mul_signed ),
         .input_vector_2         ( zn_mul_signed ),
-        .output_vector          ( h_new )
-    );
-
-    delay_module #(
-        .N        ( 1 ),
-        .DELAY    ( 14 )
-    ) delay_n_ready (
-        .clk   ( clk        ),
-        .idata ( i_n_ready  ),
-        .odata ( new_h_done )
+        .output_vector          ( h_new ),
+        .out_valid              ( new_h_done )
     );
 
     // synthesis translate_off

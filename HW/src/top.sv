@@ -11,13 +11,14 @@ module top #(
     input logic                is_valid,
     input logic                is_last,
 
-    output logic                       out_valid,
-    output logic [PRECISION_GEN-1 :0]  out_conf,
-    output logic [PRECISION_GEN-1 :0]  out_cls [CLS_NUM-1:0]
+    output logic                      out_valid,
+    output logic [PRECISION_GEN-1 :0] out_conf,
+    output logic [(8*20)-1 :0]        out_cls
+    //output logic [PRECISION_GEN-1 :0]  out_cls [CLS_NUM-1:0]
 
 //    output event_type                   event_test,
 //    output edge_type [MAX_EDGES-1:0]    edges_test,
-//    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0],
+//    output logic [PRECISION_GEN-1:0]    features_test [OUTPUT_DIM_1-1 : 0]
 
 //   output logic  [$clog2(OUTPUT_DIM_4)-1: 0] out_address, 
 //   output logic  [PRECISION_CONV4-1:0]       out_feature,
@@ -35,7 +36,7 @@ module top #(
     localparam CONV1_ZERO_POINT_IN = 32;
     localparam CONV1_ZERO_POINT_OUT = 132;
     localparam CONV1_ZERO_POINT_WEIGHT = 152;
-    localparam logic [7:0] CONV1_SCALE_IN [21:0] = {32, 29, 26, 22, 19, 16, 13, 19, 6, 3, 0, 64, 61, 58, 54, 51, 48, 45, 42, 38, 35, 32};
+    localparam logic [7:0] CONV1_SCALE_IN [21:0] = {32, 29, 26, 22, 19, 16, 13, 10, 6, 3, 0, 64, 61, 58, 54, 51, 48, 45, 42, 38, 35, 32};
 
     localparam CONV2_MULTIPLIER_DIFF_T = 53777;
     localparam CONV2_MULTIPLIER_OUT = 30159156;
@@ -106,6 +107,7 @@ module top #(
          .out_event    ( event_to_conv2    ),
          .out_edges    ( edges_to_conv2    ),
          .out_features ( features_to_conv2 )
+
      );
 
      convolution_reversed #(
@@ -172,6 +174,9 @@ module top #(
         .in_event     ( event_to_conv4    ),
         .in_edges     ( edges_to_conv4    ),
         .in_features  ( features_to_conv4 ),
+//         .out_event    ( event_test    ),
+//         .out_edges    ( edges_test    ),
+//         .out_features ( features_test )
         .out_event    ( event_to_pool     ),
         .out_edges    (                   ),
         .out_features ( features_to_pool  )
@@ -188,14 +193,23 @@ module top #(
         .out_valid    ( head_valid       )
      );
 
+    logic [PRECISION_GEN-1 :0]  out_cls_type [CLS_NUM-1:0];
     gru_head u_head (
         .clk         ( clk              ),
         .reset       ( reset            ),
         .in_valid    ( head_valid       ),
         .in_features ( features_to_head ),
         .out_conf    ( out_conf         ),
-        .out_cls     ( out_cls          ),
+        .out_cls     ( out_cls_type     ),
+        //.out_cls     ( out_cls          ),
         .out_valid   ( out_valid        )
      );
+
+    genvar i;
+    generate
+      for (i = 0; i < 20; i++) begin
+        assign out_cls[i*8 +: 8] = out_cls_type[i];
+      end
+    endgenerate
 
 endmodule : top
