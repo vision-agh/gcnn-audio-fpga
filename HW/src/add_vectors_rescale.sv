@@ -73,7 +73,7 @@ module add_vectors_rescale #(
         product <=  state ? $signed(input_reg_1[counter] - ZERO_POINT_IN_1) * $signed(MULTIPLIER_IN_1) +
                         $signed(input_reg_2[counter] - ZERO_POINT_IN_2) * $signed(MULTIPLIER_IN_2) : '0;
         product_reg <= product[31];
-        debug_mul <= state_reg ? product >>> 32 : '0;
+        debug_mul <= state_reg ? (product) >>> 32 : '0;
         temp_sum <= state_reg2 ? (debug_mul[PRECISION-1:0] + ZERO_POINT_OUT) + product_reg: '0;
         if (temp_sum > $signed({1'b0, {PRECISION{1'b1}}})) begin
             saturated_result <= {PRECISION{1'b1}};

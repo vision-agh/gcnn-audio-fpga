@@ -40,12 +40,21 @@ module convolution #(
 
     localparam IDLE = 2'd0;
     localparam CONV = 2'd1;
+
+    initial begin
+        out_event_reg <= '{default:0};
+        out_edges_reg <= '{default:0};
+        in_edges_reg <= '{default:0};
+        in_event_reg <= '{default:0};
+    end
     
+
     localparam AWIDTH = $clog2(NUM_CHANNEL);
     localparam DWIDTH = INPUT_DIM * PRECISION_IN;
     logic state = IDLE;
     logic state_reg = IDLE;
-
+    logic state_read = IDLE;
+    logic state_quant = IDLE;
     /////////////////////////////////////////////////////////////////
     //                        Handle MEMORY                        //
     /////////////////////////////////////////////////////////////////
@@ -135,6 +144,8 @@ module convolution #(
             web_reg <= web;
             //end
             state_reg <= state;
+            state_read <= state_reg;
+            state_quant <= state_read;
 
             outdim_counter_compare <= outdim_counter_mul_out;
             outdim_counter_acc <= outdim_counter_compare;
@@ -290,7 +301,7 @@ module convolution #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_a_1 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_a        ),
         .weight_vector     ( single_weight1    ),
         .bias              ( single_bias1      ),
@@ -307,7 +318,7 @@ module convolution #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_a_2 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_a        ),
         .weight_vector     ( single_weight2    ),
         .bias              ( single_bias2      ),
@@ -324,7 +335,7 @@ module convolution #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_b_1 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_b        ),
         .weight_vector     ( single_weight1    ),
         .bias              ( single_bias1      ),
@@ -341,7 +352,7 @@ module convolution #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_b_2 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_b        ),
         .weight_vector     ( single_weight2    ),
         .bias              ( single_bias2      ),

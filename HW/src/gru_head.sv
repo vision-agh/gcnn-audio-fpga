@@ -22,6 +22,11 @@ module gru_head #(
     logic [PRECISION-1:0]  zp_w [5:0] = {147, 152, 119, 110, 157, 131};
     logic [PRECISION-1:0]  zp_o [5:0] = {166, 119, 117, 136, 147, 117};
 
+    initial begin
+        out_conf <= '{default:0};
+        out_cls <= '{default:0};
+    end
+
     localparam ITERATIONS = HEAD_DIM/2;
     localparam TAKEOFF = 3'd7;
     localparam GRU_H = 3'd0;

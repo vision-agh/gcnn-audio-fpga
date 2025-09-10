@@ -22,7 +22,7 @@ module feature_gen #(
     logic [$clog2(MAX_EDGES)-1 : 0]     counter,counter_reg;
     logic [23 : 0] t_temp;
     logic [15 : 0] f_temp;
-        
+
     logic [F_WIDTH-1:0] edge_f; 
     logic [T_WIDTH-1:0] edge_t;
     logic fin;

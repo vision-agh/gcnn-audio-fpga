@@ -46,6 +46,15 @@ module convolution_reversed #(
     localparam DWIDTH = INPUT_DIM * PRECISION_IN;
     logic state = IDLE;
     logic state_reg = IDLE;
+    logic state_read = IDLE;
+    logic state_quant = IDLE;
+
+    initial begin
+        out_event_reg <= '{default:0};
+        out_edges_reg <= '{default:0};
+        in_edges_reg <= '{default:0};
+        in_event_reg <= '{default:0};
+    end
 
     /////////////////////////////////////////////////////////////////
     //                        Handle MEMORY                        //
@@ -136,7 +145,9 @@ module convolution_reversed #(
             web_reg <= web;
 
             state_reg <= state;
-
+            state_read <= state_reg;
+            state_quant <= state_read;
+            
             outdim_counter_reg <= outdim_counter;
             outdim_counter_compare <= outdim_counter_mul_out;
             outdim_counter_acc <= outdim_counter_compare;
@@ -361,7 +372,7 @@ module convolution_reversed #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_a_1 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_a        ),
         .weight_vector     ( single_weight1    ),
         .bias              ( single_bias1      ),
@@ -378,7 +389,7 @@ module convolution_reversed #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_a_2 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_a        ),
         .weight_vector     ( single_weight2    ),
         .bias              ( single_bias2      ),
@@ -395,7 +406,7 @@ module convolution_reversed #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_b_1 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_b        ),
         .weight_vector     ( single_weight1    ),
         .bias              ( single_bias1      ),
@@ -412,7 +423,7 @@ module convolution_reversed #(
         .PRECISION_OUT     ( PRECISION_OUT  )
     ) mul_b_2 (
         .clk               ( clk               ),
-        .en                ( !reset            ),
+        .en                ( state_quant       ),
         .feature_vector    ( features_b        ),
         .weight_vector     ( single_weight2    ),
         .bias              ( single_bias2      ),
