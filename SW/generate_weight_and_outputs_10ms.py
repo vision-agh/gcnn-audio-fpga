@@ -50,15 +50,15 @@ model = model.model
 model.eval().to(device)
 model.quantize()
 
-data = {'pos': torch.tensor([[0, 479],
-                            [1166, 94],
-                            [4166, 450],
-                            [4333, 668],
-                            [5459, 331],
-                            [5665, 1],
-                            [7252, 498],
-                            [7710, 660],
-                            [10628, 207]], dtype=torch.float)}
+data = {'pos': torch.tensor([[0, 10],
+                            [1166, 20],
+                            [4166, 30],
+                            [4333, 40],
+                            [5459, 50],
+                            [5665, 60],
+                            [7252, 70],
+                            [7710, 80],
+                            [10628, 90]], dtype=torch.float)}
 
 
 time_window = cfg.general.time_window
