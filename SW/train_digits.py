@@ -41,7 +41,7 @@ def main():
     )
 
     trainer = L.Trainer(max_epochs=1, 
-                        log_every_n_steps=1000, 
+                        log_every_n_steps=1, 
                         gradient_clip_val=0.0,
                         logger=wandb_logger,
                         callbacks=[lr_monitor, checkpoint_callback],

@@ -116,8 +116,8 @@ def main():
         plt.axvline(start_time, color='red', linestyle='--', label='Start Time')
         plt.axvline(end_time, color='red', linestyle='--', label='End Time')
 
-        plt.title('Histogram of Time Values')
-        plt.xlabel('Time (microseconds)')
+        # plt.title('Histogram of Time Values')
+        plt.xlabel('Time')
         plt.ylabel('Frequency')
         plt.grid()
         plt.show()

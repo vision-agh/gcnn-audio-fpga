@@ -105,9 +105,9 @@ class MyMovingGlobalPooling(nn.Module):
 
         # choose pure-PyTorch pooling
         if self.aggregator == 'add':
-            out = global_add_pool(x, pos, batch)
+            out = self.global_add_pool(x, pos, batch, observer=observer)
         elif self.aggregator == 'mean':
-            out = global_mean_pool(x, pos, batch)
+            out = self.global_mean_pool(x, pos, batch, observer=observer)
         else:  # 'max'
             out = self.global_max_pool(x, pos, batch, observer=observer)
 
@@ -189,6 +189,136 @@ class MyMovingGlobalPooling(nn.Module):
                 torch.ones_like(pooled_flat) * (0.0),
                 pooled_flat,
             )
+
+        # 8) reshape back to [B, T, F] – view/reshape is fine, no data is mutated
+        return pooled_flat.view(B, T, F)
+    
+    def global_mean_pool(self,
+        x: Tensor,        # [N, F]
+        pos: Tensor,      # [N, 2]  – pos[:, 0] is time in seconds
+        batch: Tensor,    # [N]     – values 0 … B-1
+        step: float = 0.01,
+        observer: Optional[Observer] = None
+    ) -> Tensor:
+        """
+        Divide each sample’s events into T = int(1/step) time bins and perform
+        max-pooling inside every bin separately for every batch.
+        Returns a tensor of shape [B, T, F].
+
+        The implementation is *purely* out-of-place: no tensor is modified after
+        construction, so it is autograd-friendly and side-effect-free.
+        """
+
+        # 1) static parameters
+        T = int(1.0 / step)
+        B = int(batch.max().item()) + 1
+        F = x.size(1)
+
+        # 2) time-bin index for every event  ➜ [N] in 0 … T-1
+        idx = (pos[:, 0] / step).floor().long()
+
+        # 3) flatten (batch, time) ⇒ single axis 0 … B·T-1
+        flat_idx = batch * T + idx
+
+        # 4) tensor filled with −∞, used as “identity” for max
+        pooled_flat = torch.full(
+            (B * T, F),
+            fill_value=float(0),
+            dtype=x.dtype,
+            device=x.device,
+        )
+
+        # 5) broadcast indices to match feature dimension  ➜ [N, F]
+        idx_expanded = flat_idx.unsqueeze(1).expand(-1, F)
+
+        # 6) scatter-reduce (amax) – out-of-place
+        pooled_flat = torch.scatter_reduce(
+            pooled_flat,
+            dim=0,
+            index=idx_expanded,
+            src=x,
+            reduce="mean",
+            include_self=True,
+        )  # shape [B·T, F]
+
+        # # 7) replace untouched bins (still −∞) with 0 – out-of-place “where”
+        # if self.quantize_mode.item():
+        #     pooled_flat = torch.where(
+        #     pooled_flat == -float("inf"),
+        #     torch.ones_like(pooled_flat) * observer.zero_point.item(),
+        #     pooled_flat,
+        # )
+        # else:
+        #     pooled_flat = torch.where(
+        #         pooled_flat == -float("inf"),
+        #         torch.ones_like(pooled_flat) * (0.0),
+        #         pooled_flat,
+        #     )
+
+        # 8) reshape back to [B, T, F] – view/reshape is fine, no data is mutated
+        return pooled_flat.view(B, T, F)
+    
+    def global_add_pool(self,
+        x: Tensor,        # [N, F]
+        pos: Tensor,      # [N, 2]  – pos[:, 0] is time in seconds
+        batch: Tensor,    # [N]     – values 0 … B-1
+        step: float = 0.01,
+        observer: Optional[Observer] = None
+    ) -> Tensor:
+        """
+        Divide each sample’s events into T = int(1/step) time bins and perform
+        max-pooling inside every bin separately for every batch.
+        Returns a tensor of shape [B, T, F].
+
+        The implementation is *purely* out-of-place: no tensor is modified after
+        construction, so it is autograd-friendly and side-effect-free.
+        """
+
+        # 1) static parameters
+        T = int(1.0 / step)
+        B = int(batch.max().item()) + 1
+        F = x.size(1)
+
+        # 2) time-bin index for every event  ➜ [N] in 0 … T-1
+        idx = (pos[:, 0] / step).floor().long()
+
+        # 3) flatten (batch, time) ⇒ single axis 0 … B·T-1
+        flat_idx = batch * T + idx
+
+        # 4) tensor filled with −∞, used as “identity” for max
+        pooled_flat = torch.full(
+            (B * T, F),
+            fill_value=float(0),
+            dtype=x.dtype,
+            device=x.device,
+        )
+
+        # 5) broadcast indices to match feature dimension  ➜ [N, F]
+        idx_expanded = flat_idx.unsqueeze(1).expand(-1, F)
+
+        # 6) scatter-reduce (amax) – out-of-place
+        pooled_flat = torch.scatter_reduce(
+            pooled_flat,
+            dim=0,
+            index=idx_expanded,
+            src=x,
+            reduce="sum",
+            include_self=True,
+        )  # shape [B·T, F]
+
+        # # 7) replace untouched bins (still −∞) with 0 – out-of-place “where”
+        # if self.quantize_mode.item():
+        #     pooled_flat = torch.where(
+        #     pooled_flat == -float("inf"),
+        #     torch.ones_like(pooled_flat) * observer.zero_point.item(),
+        #     pooled_flat,
+        # )
+        # else:
+        #     pooled_flat = torch.where(
+        #         pooled_flat == -float("inf"),
+        #         torch.ones_like(pooled_flat) * (0.0),
+        #         pooled_flat,
+        #     )
 
         # 8) reshape back to [B, T, F] – view/reshape is fine, no data is mutated
         return pooled_flat.view(B, T, F)
