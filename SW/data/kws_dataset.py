@@ -11,7 +11,6 @@ def detect_active_range(hist, bin_edges, T_high=None, T_low=None, cooldown_steps
     hist = hist.astype(np.float32)
     hist_smoothed = cv2.GaussianBlur(hist.reshape(1, -1), (7, 1), 0).flatten()
 
-    # Progi: można dobrać ręcznie lub na podstawie statystyk
     if T_high is None:
         T_high = np.mean(hist_smoothed) + 0.5 * np.std(hist_smoothed)
     if T_low is None:
@@ -34,10 +33,10 @@ def detect_active_range(hist, bin_edges, T_high=None, T_low=None, cooldown_steps
                 cooldown += 1
                 if cooldown >= cooldown_steps:
                     end_idx = i - cooldown
-                    break  # koniec aktywności
+                    break  # end of activity
 
     if active and end_idx is None:
-        end_idx = len(hist_smoothed) - 1  # jeśli nie zakończyło się spadkiem
+        end_idx = len(hist_smoothed) - 1 
 
     if start_idx is not None and end_idx is not None:
         start_time = bin_edges[start_idx]
@@ -107,18 +106,16 @@ class SpikingDS(Dataset):
 
         start_time, end_time, hist_smoothed = detect_active_range(hist, bin_edges)
 
-        # Poprawne przypisanie end_time
-        data['end_time'] = end_time  # w sekundach w skali [0,1]
+        data['end_time'] = end_time  # seconds in range [0,1]
 
-        # --- tutaj generujemy etykietę y ---
-        T = int(1.0 / bin_width)      # liczba binów = 100
+        # --- here we generate labels y ---
+        T = int(1.0 / bin_width)      # num of bins = 100
         y = torch.zeros(T, dtype=torch.float32)
         cls = torch.zeros(T, dtype=torch.float32)
 
         if end_time is not None:
-            # indeks biny, w której kończy się słowo
+            # index of bin, where words ends
             bin_idx = int(end_time // bin_width)
-            # upewniamy się, że nie wychodzi poza zakres
             if 0 <= bin_idx < T:
                 y[bin_idx] = 1.0
                 cls[bin_idx] = data['y']
@@ -135,64 +132,3 @@ class SpikingDS(Dataset):
         data['cls'] = cls
 
         return data
-    
-    def generate_edges(self, 
-                       times: torch.Tensor, 
-                       channels: torch.Tensor):
-        edges = []
-        feature = []
-        
-        channel_last_event = [None] * self.num_channels
-
-        for idx, (time, channel) in enumerate(zip(times, channels)):
-
-            sum_t = 0
-            sum_channel = 0
-            sum_idx = 0
-
-            time, channel = time.item(), channel.item()
-
-            for n_channel in range(int(channel - self.channel_radius), 
-                                   int(channel + self.channel_radius + 1), 
-                                   self.skip_channels):
-
-                if n_channel < 0 or n_channel >= self.num_channels:
-                    continue
-                
-                if channel_last_event[n_channel] is not None:
-                    n_time, n_idx = channel_last_event[n_channel]
-
-                    if time - n_time <= self.time_radius:
-                        edges.append((n_idx, idx))
-
-                        if self.features == 'local':
-                            sum_t += (time - n_time)
-                            sum_channel += (channel - n_channel)
-                        
-                        elif self.features == 'global':
-                            sum_t += n_time
-                            sum_channel += n_channel
-
-                        sum_idx += 1
-
-            if sum_idx == 0:
-                mean_t = 0
-                mean_channel = 0
-            else:
-                mean_t = round((sum_t / sum_idx) + 1e-6) # Add 1e-6 because Python is stupid
-                mean_channel = round((sum_channel / sum_idx) + 1e-6)
-
-            channel_last_event[int(channel)] = (time, idx)
-
-            if self.features == 'local':
-                feature.append([mean_t / self.time_radius, mean_channel / self.channel_radius])
-            elif self.features == 'global':
-                feature.append([mean_t / self.time_window, mean_channel / self.num_channels])
-        
-        edges = torch.tensor(edges).t().contiguous()
-
-        if self.features:
-            feature = torch.tensor(feature)
-            return edges, feature
-        
-        return edges

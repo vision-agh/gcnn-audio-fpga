@@ -22,8 +22,6 @@ dm.setup()
 
 # model = LNRecognition.load_from_checkpoint('checkpoints/best_model_float.ckpt', config=cfg)
 
-# model.model.calibrate()
-# model.model.quantize()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = torch.load('checkpoints/best_model_quantized.ckpt', map_location='cpu', weights_only=False)
 model.eval().to(device)

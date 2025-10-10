@@ -30,7 +30,6 @@ class SpikingDigits(L.LightningDataModule):
         labels = file['labels']
 
         for idx, (times, units, label) in tqdm(enumerate(zip(data["times"], data["units"], labels))):
-            # print(labels)
             new_file_name = self.data_dir + f'/processed/{mode}/{idx}.pt'
 
             if os.path.exists(new_file_name):

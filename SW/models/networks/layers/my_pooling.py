@@ -74,7 +74,7 @@ class MyGlobalPooling(nn.Module):
         elif self.quantize_mode:
             out = torch.clamp(out, 0, 2**self.num_bits - 1)
             out = out.round()
-            out = observer.dequantize_tensor(out)
+            # out = observer.dequantize_tensor(out)
         # else: no calibration or quantization
 
         return out
